@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# CMake
+build/
+cmake-build-*/
+
+# IDE
+.vscode/
+.idea/
+.vs/
+*.user
+*.suo
+
+# Secrets
+.env
+
+# Runtime captures (keep the placeholder)
+SNDEV/logs/*
+!SNDEV/logs/.gitkeep

@@ -1,0 +1,33 @@
+# Placeholder stack. Client-certificate TLS per NFR-SEC-001 (TLS 1.3 and client
+# certificates for the compliance database) is configured by a later migration step.
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-surgitwin}
+      POSTGRES_USER: ${POSTGRES_USER:-surgitwin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+
+  middleware:
+    build:
+      context: ./middleware
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-surgitwin}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-surgitwin}
+      JWT_SECRET: ${JWT_SECRET:-}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app:ro
+    command: ["sh", "-c", "echo frontend placeholder; sleep infinity"]
+
+volumes:
+  pgdata:

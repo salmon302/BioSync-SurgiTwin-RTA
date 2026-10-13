@@ -1,0 +1,8 @@
+# Keep local secrets, caches, and test artifacts out of the image.
+.env
+.env.*
+**/.env
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+tests/

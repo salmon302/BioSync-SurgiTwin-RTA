@@ -1,0 +1,225 @@
+# Multi-stage build for the SurgiTwin-RTA middleware with the Kitware Pulse Physiology
+# Engine ("Pulse" Python bindings, a.k.a. PyPulse). Origin: BioSync-Gateway
+# middleware/Dockerfile.pulse (copied; healthcheck and documentation references adapted).
+#
+# Implements SRS FR-MS-006 (Pulse integration). The native engine is COMPILED FROM SOURCE
+# in stage 1 and copied into a slim Python 3.11 runtime in stage 2. Builder and runtime
+# use the SAME Python (3.11) so the compiled extension module is ABI-compatible.
+#
+# EXTERNAL PREREQUISITE (not in this repository): the Pulse engine source tree must be
+# placed at ./.pulse/ in the repository root for VARIANT=local. It is gitignored and is not
+# copied here. Record the engine version and provenance in the image build log.
+#
+# Build context MUST be the repository root so `.pulse/` and `middleware/Pulse` are reachable.
+# Source selection (build arg VARIANT, default "local"):
+#   local (default): COPY the vendored .pulse/ source (offline, reproducible).
+#   git:             clone the pinned PULSE_VERSION tag from gitlab (use when .pulse/ is absent).
+#
+#   Local:  docker build -f middleware/Dockerfile.pulse -t surgitwin-pulse .
+#   Git:    docker build -f middleware/Dockerfile.pulse --build-arg VARIANT=git -t surgitwin-pulse:ci .
+#
+# Acceptance: `import pulse` succeeds in the runtime image and the IQ-4 and OQ-16 suites
+# (vv/tests/IQ, vv/tests/OQ) pass against the real engine. Those suites skip without the bindings.
+
+ARG VARIANT=local
+ARG PULSE_VERSION=REL_4_3_2
+ARG PULSE_DOWNLOAD_BASELINES=OFF
+
+# =============================================================================
+# Stage 1a - compile from the LOCALLY VENDORED .pulse source (default)
+# =============================================================================
+FROM python:3.11-bullseye AS pulse-builder-local
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Build toolchain. The Pulse superbuild downloads/compiles its own
+# Boost / Protobuf / Eigen / abseil. We also install a JDK because the
+# physiological data generator (Pulse_GEN_DATA) requires the Java API to
+# serialize the substance/patient-state library into /pulse/bin.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git wget build-essential cmake \
+        unzip pkg-config ca-certificates \
+        libssl-dev zlib1g-dev libcurl4-openssl-dev \
+        default-jdk \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir pandas openpyxl pycel
+
+# Copy the locally-vendored engine source (downloaded into .pulse/).
+WORKDIR /source
+COPY .pulse /source
+
+# Configure + build. Java API is ON *only* to enable Pulse_GEN_DATA, which
+# generates the substance/patient-state data the engine requires at init; the
+# C# API stays off. Output is installed to /pulse (python -> bindings, bin -> libs).
+#
+# NOTE: the Pulse *superbuild* installs its artifacts during `make` (the inner
+# ExternalProject's INSTALL_COMMAND runs as part of the build), so there is no
+# top-level `make install` target to invoke. The legacy `|| make install`
+# fallback therefore fails with "No rule to make target 'install'". We instead
+# assert the expected artifacts are present after `make`.
+RUN mkdir -p /build /pulse \
+    && cd /build \
+    && cmake -DPulse_PYTHON_API=ON \
+             -DPulse_JAVA_API=ON \
+             -DPulse_CSHARP_API=OFF \
+             -DPULSE_DOWNLOAD_BASELINES=${PULSE_DOWNLOAD_BASELINES} \
+             -DCMAKE_INSTALL_PREFIX=/pulse \
+             -DCMAKE_BUILD_TYPE=Release \
+             -DPYTHON_EXECUTABLE=/usr/local/bin/python3.11 \
+             /source \
+    && make -j"$(nproc)" \
+    && test -e /pulse/python/pulse/__init__.py \
+    && test -n "$(ls /pulse/bin/PyPulse* 2>/dev/null)" \
+    && cd / && rm -rf /build
+
+# Regenerate engine data EXPLICITLY. The `PulseData` POST_BUILD (run.cmake
+# genData/genStates) runs under parallel `make -j`, without the loader env, and
+# without checking its return code. So `JNIBridge.initialize()` (DataSetReader)
+# can fail to find the native lib and silently produce NO substance/patient
+# data, leaving /pulse/bin without `substances/` + `patients/` and making
+# `initialize_engine` fail at the IQ-4 gate. Re-run it here, sequentially, with
+# the loader env set, and assert the artifacts exist so any failure is loud.
+ENV LD_LIBRARY_PATH=/pulse/bin:/pulse/lib:/usr/local/lib:${LD_LIBRARY_PATH}
+ENV PYTHONPATH=/pulse/python:/pulse/bin
+ENV JAVA_TOOL_OPTIONS=-Djava.library.path=/pulse/bin:/pulse/lib:/usr/local/lib
+RUN cd /pulse/bin \
+    && cmake -DTYPE:STRING=genData -P run.cmake \
+    && cmake -DTYPE:STRING=genStates -P run.cmake \
+    && test -n "$(ls /pulse/bin/substances/*.json 2>/dev/null)" \
+    && test -e /pulse/bin/patients/StandardMale.json \
+    && test -e /pulse/bin/states/StandardMale@0s.json
+
+# =============================================================================
+# Stage 1b - compile from the pinned upstream tag (CI; .pulse absent in checkout)
+# =============================================================================
+FROM python:3.11-bullseye AS pulse-builder-git
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# JDK required by Pulse_GEN_DATA (data generation); see local stage notes.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git wget build-essential cmake \
+        unzip pkg-config ca-certificates \
+        libssl-dev zlib1g-dev libcurl4-openssl-dev \
+        default-jdk \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir pandas openpyxl pycel
+
+# Clone the validated stable release (ABI matched to python:3.11).
+WORKDIR /source
+RUN git clone --depth 1 --branch ${PULSE_VERSION} \
+        https://gitlab.kitware.com/physiology/engine.git /source
+
+RUN mkdir -p /build /pulse \
+    && cd /build \
+    && cmake -DPulse_PYTHON_API=ON \
+             -DPulse_JAVA_API=ON \
+             -DPulse_CSHARP_API=OFF \
+             -DPULSE_DOWNLOAD_BASELINES=${PULSE_DOWNLOAD_BASELINES} \
+             -DCMAKE_INSTALL_PREFIX=/pulse \
+             -DCMAKE_BUILD_TYPE=Release \
+             -DPYTHON_EXECUTABLE=/usr/local/bin/python3.11 \
+             /source \
+    && make -j"$(nproc)" \
+    && test -e /pulse/python/pulse/__init__.py \
+    && test -n "$(ls /pulse/bin/PyPulse* 2>/dev/null)" \
+    && cd / && rm -rf /build
+
+# Regenerate engine data EXPLICITLY. The `PulseData` POST_BUILD (run.cmake
+# genData/genStates) runs under parallel `make -j`, without the loader env, and
+# without checking its return code. So `JNIBridge.initialize()` (DataSetReader)
+# can fail to find the native lib and silently produce NO substance/patient
+# data, leaving /pulse/bin without `substances/` + `patients/` and making
+# `initialize_engine` fail at the IQ-4 gate. Re-run it here, sequentially, with
+# the loader env set, and assert the artifacts exist so any failure is loud.
+ENV LD_LIBRARY_PATH=/pulse/bin:/pulse/lib:/usr/local/lib:${LD_LIBRARY_PATH}
+ENV PYTHONPATH=/pulse/python:/pulse/bin
+ENV JAVA_TOOL_OPTIONS=-Djava.library.path=/pulse/bin:/pulse/lib:/usr/local/lib
+RUN cd /pulse/bin \
+    && cmake -DTYPE:STRING=genData -P run.cmake \
+    && cmake -DTYPE:STRING=genStates -P run.cmake \
+    && test -n "$(ls /pulse/bin/substances/*.json 2>/dev/null)" \
+    && test -e /pulse/bin/patients/StandardMale.json \
+    && test -e /pulse/bin/states/StandardMale@0s.json
+
+# =============================================================================
+# Stage 2 - slim runtime with compiled engine + application
+# =============================================================================
+FROM pulse-builder-${VARIANT} AS pulse-builder
+
+# IMPORTANT: the runtime base MUST be Debian bullseye to match the
+# `pulse-builder` stage (python:3.11-bullseye). The builder's superbuild shared
+# libraries (protobuf/boost/abseil) AND Python's _ssl module are copied into
+# this stage via `COPY --from=pulse-builder /usr/local/lib ...`. Those are
+# linked against bullseye's libssl1.1; a bookworm/newer base only ships libssl3,
+# which breaks `_ssl` -> "ssl module is not available" -> pip cannot reach PyPI
+# (this was the failing stage-3 build).
+FROM python:3.11-bullseye
+
+WORKDIR /app
+
+# Runtime C/C++ libs the compiled engine links against. libstdc++6 is required
+# by the compiled engine; zlib1g/libcurl4 are required by the Pulse superbuild
+# shared libs (protobuf/boost/abseil) copied from the builder stage.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libstdc++6 \
+        zlib1g \
+        libcurl4 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the compiled engine (module + shared libs) from the builder.
+COPY --from=pulse-builder /pulse /pulse
+# Compatibility shim so the legacy `import Pulse` / `Pulse.CDM` surface used by
+# the middleware resolves onto the real 4.3.2 `pulse` / `PyPulse` bindings.
+COPY middleware/Pulse /pulse/python/Pulse
+# The physiological substance/patient-state data is GENERATED during the build
+# (Pulse_GEN_DATA, enabled via the Java API) into /pulse/bin, so data_root_dir
+# points there. No extra data copy is required.
+# Safety net: any superbuild-built shared libs (protobuf/boost/abseil).
+COPY --from=pulse-builder /usr/local/lib /usr/local/lib
+RUN ldconfig
+
+# Expose the compiled bindings to the interpreter.
+# /pulse/python -> `pulse` package + `Pulse` shim; /pulse/bin -> `PyPulse` .so.
+ENV PYTHONPATH=/pulse/python:/pulse/bin
+ENV LD_LIBRARY_PATH=/pulse/bin:/pulse/lib:/usr/local/lib:${LD_LIBRARY_PATH}
+# Engine baseline data (substances/, states/) is generated into /pulse/bin.
+ENV PULSE_DATA_ROOT=/pulse/bin
+
+# R1: the REAL engine is used automatically whenever `import Pulse` succeeds.
+# Deterministic seed-synthesis is now the EXPLICIT opt-in (set to 1 to force it).
+ENV BIOSSYNC_SYNTHETIC=0
+
+# Application dependencies (pandas is required by Pulse's pull_data()).
+COPY middleware/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Application code.
+COPY middleware /app
+
+# IQ-4 build gate: the real engine bindings MUST import AND initialize
+# against the generated substance/patient-state data in /pulse/bin. An empty
+# SEPatientConfiguration() returns False (no patient selected), so we load
+# the generated StandardMale patient definition explicitly.
+# NOTE: the runtime base is the FULL python:3.11-bullseye (matching the
+# builder) because the engine segfaults during substance loading under the
+# minimal slim image's libstdc++/libc (environment-triggered UB). See
+# SNDEV/docs/impl-2026-07-28-pulse-docker-ssl-fix.md for the full trace.
+RUN python - <<'PY'
+import Pulse
+from Pulse import Engine
+from Pulse.CDM import SEPatientConfiguration
+print('PyPulse (Pulse) OK:', Pulse.__file__)
+e = Engine(data_root_dir='/pulse/bin')
+cfg = SEPatientConfiguration()
+cfg.set_patient_file('/pulse/bin/patients/StandardMale.json')
+assert e.initialize_engine(cfg), 'Pulse engine failed to initialize (generated substance data)'
+print('ENGINE INIT OK')
+PY
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

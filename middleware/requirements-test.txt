@@ -1,2 +1,5 @@
+# Test and qualification dependencies (not installed in the runtime image).
 -r requirements.txt
 pytest==8.3.4
+# Starlette TestClient transport
+httpx==0.28.1

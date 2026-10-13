@@ -23,6 +23,9 @@ cmake-build-*/
 # Secrets
 .env
 
+# External Pulse physiology engine source (Dockerfile.pulse prerequisite, not vendored here)
+.pulse/
+
 # Runtime captures (keep the placeholder)
 SNDEV/logs/*
 !SNDEV/logs/.gitkeep

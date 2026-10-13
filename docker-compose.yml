@@ -1,5 +1,9 @@
-# Placeholder stack. Client-certificate TLS per NFR-SEC-001 (TLS 1.3 and client
-# certificates for the compliance database) is configured by a later migration step.
+# Compliance and informatics stack. Required secrets come from .env (never commit .env).
+#
+# Known debt (NFR-SEC-001, Gateway R2 OPEN): this stack does not enforce client-certificate TLS
+# to the compliance database. The postgres service has no TLS listener and no pg_hba hostssl
+# clientcert=verify-full rule. DB_SSLMODE therefore defaults to "disable" here. Production
+# deployments must not use this default. See docs/migration-map.md.
 services:
   postgres:
     image: postgres:15
@@ -9,7 +13,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./database/init:/docker-entrypoint-initdb.d:ro
+      # Init source: the append-only schema, applied in order on first start. The nightly
+      # hash-chain-check.sql is a read-only report and is not mounted here.
+      - ./database/migrations/001-extensions.sql:/docker-entrypoint-initdb.d/001-extensions.sql:ro
+      - ./database/migrations/002-schema.sql:/docker-entrypoint-initdb.d/002-schema.sql:ro
+      - ./database/migrations/003-triggers.sql:/docker-entrypoint-initdb.d/003-triggers.sql:ro
 
   middleware:
     build:
@@ -17,8 +25,10 @@ services:
     depends_on:
       - postgres
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-surgitwin}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-surgitwin}
-      JWT_SECRET: ${JWT_SECRET:-}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-surgitwin}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-surgitwin}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
     ports:
       - "8000:8000"
 

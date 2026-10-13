@@ -1,0 +1,15 @@
+# Root build context (used by middleware/Dockerfile.pulse). Keep secrets and non-middleware trees out.
+**/.env
+.env
+.env.*
+.git
+build/
+rta/
+sim/
+edge/
+frontend/
+vv/
+SNDEV/
+docs/
+**/__pycache__/
+**/.pytest_cache/

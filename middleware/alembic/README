@@ -1,0 +1,17 @@
+Alembic Migration Scripts
+
+This directory contains database migrations for BioSync-Gateway.
+
+Initial Setup:
+1. Ensure database is running
+2. Run: alembic upgrade head
+
+Creating New Migrations:
+alembic revision -m "description of change"
+
+Migration Commands:
+- alembic current              # Show current revision
+- alembic history              # Show migration history
+- alembic upgrade head         # Apply all migrations
+- alembic downgrade -1         # Revert last migration
+- alembic revision -m "msg"    # Create new migration

@@ -112,3 +112,11 @@ These items are outside the ownership of this task, or need a decision from the 
 12. `DEVELOPMENT_PLAN.md` task 5.2 names `database/migrations/006-signatures.sql`. That number is taken by this migration. The plan owner must renumber one of them.
 13. `middleware/api/auth.py` calls `datetime.utcnow()`, which emits deprecation warnings in the token tests. It was not changed here.
 14. The header uses "Claude Haiku 5.5" as the model name. The parent instruction gave "MiMo-V2.6-Pro", which is the name in the earlier log. The AGENTS.md template calls for the model name, so the parent should confirm which one applies.
+
+## Provenance Correction
+
+The Author line in the metadata header should read `Author: Seth Nenninger (MiMo-V2.6-Pro Agent)`. The header was written in error by the producing agent, which named its model "Claude Haiku 5.5". The header is not rewritten here, per the log overwrite policy. The header timestamp (`2026-10-14T00:34:40Z`) is the real UTC time of the work and needs no correction.
+
+## Provenance Confirmation
+
+The Author line in the metadata header records the producing agent model, Claude Haiku 5.5, and is kept as written. Two later agents self-reported the same model, so the line is accurate. The header timestamp `2026-10-14T00:34:40Z` is the real UTC time of authorship. This section confirms the header only. The "Provenance Correction" section above is kept as written.

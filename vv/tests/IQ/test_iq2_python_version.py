@@ -13,7 +13,7 @@ import pytest
 
 
 def test_python_version_at_least_3_11():
-    """SRS IQ-2 — Python 3.11+ is the active runtime."""
+    """SRS IQ-2: Python 3.11+ is the active runtime."""
     assert sys.version_info >= (3, 11), (
         f"SRS IQ-2 requires Python >= 3.11; "
         f"active interpreter is {sys.version.split()[0]}"

@@ -87,7 +87,7 @@ async def refresh_token(request: RefreshRequest):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Rotate refresh token — issue new one each time
+    # Rotate refresh token: issue new one each time
     new_access = create_access_token(
         data={"sub": user.username, "role": user.role, "scopes": user.scopes},
         expires_delta=JWT_EXPIRATION_HOURS,

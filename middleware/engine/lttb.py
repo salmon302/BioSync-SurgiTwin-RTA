@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 """
 Largest-Triangle-Three-Buckets (LTTB) Downsampling Engine
-Implements SRS FR-3.1.2 / NFR-P2 — 60 fps at 100k pts/s.
+Implements SRS FR-3.1.2 / NFR-P2: 60 fps at 100k pts/s.
 
 LTTB is an algorithm specifically designed for time-series data that reduces
 the number of data points while perfectly preserving visual peaks and troughs
@@ -35,7 +35,7 @@ def lttb(
         and last points and the most visually significant intermediate points.
 
     Implements:
-        SRS FR-3.1.2 — Downsampling for 60 fps rendering at 100k pts/s.
+        SRS FR-3.1.2: Downsampling for 60 fps rendering at 100k pts/s.
     """
     n = len(data)
     if threshold >= n or threshold < 2:
@@ -117,7 +117,7 @@ def lttb_multichannel(
         Dict mapping channel name to downsampled list of (timestamp, value) tuples.
 
     Implements:
-        SRS FR-3.1.2 — Multi-channel downsampling for 4-channel telemetry.
+        SRS FR-3.1.2: Multi-channel downsampling for 4-channel telemetry.
     """
     return {
         name: lttb(data, threshold)
@@ -148,7 +148,7 @@ def downsample_telemetry(
         Downsampled list of observation dicts.
 
     Implements:
-        SRS FR-3.1.2 — Downsampling telemetry before WebSocket push.
+        SRS FR-3.1.2: Downsampling telemetry before WebSocket push.
     """
     if not observations or threshold >= len(observations):
         return observations[:]

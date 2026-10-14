@@ -9,25 +9,28 @@ Acceptance:
     account names. A distinct individual account is accepted as a control.
   * The application role surgitwin_app cannot disable or alter the immutability triggers, cannot
     truncate or change the record tables, cannot create triggers, and cannot set
-    session_replication_role. Each attempt is run by a login role that is a member of
+    session_replication_role. Each attempt runs as a scratch role that is a member of
     surgitwin_app, and each one fails.
   * The application role keeps the grants it needs: inserts on record tables, and insert and
     update on users. Its user updates are captured in audit_log with the actor it sets.
   * The triggers that the attempts target stay enabled after the attempts.
 
-The module creates the disposable database surgitwin_audit_test and a login role with a random
-password. It drops both on exit. The password is not written to any file. Requires
-BIOSYNC_TEST_DATABASE_URL. Skipped with a reason when no database is reachable.
+The module creates the disposable database surgitwin_audit_test and a NOLOGIN scratch role. It drops
+both on exit. Requires BIOSYNC_TEST_DATABASE_URL. Skipped with a reason when no database is reachable.
 
-Under client-certificate TLS the application login role cannot present a matching certificate, so
-the tests that use the application login role are skipped with a reason. The shared-account tests
-run under TLS.
+Role identity under TLS. Under client-certificate TLS the CN of the client certificate must equal the
+login role, and database/certs/generate-certs.sh issues one client CN. The module therefore never
+logs in as a scratch role. The certified login from BIOSYNC_TEST_DATABASE_URL runs the owner path
+(creating the scratch role), and each application-role case runs SET ROLE to the scratch role on that
+connection. RESET ROLE runs before the connection returns to the pool. The same code runs under
+plaintext and under TLS, so the case set is identical in both modes.
 """
 
 import secrets
+from contextlib import contextmanager
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -67,33 +70,35 @@ def session(audit_db):
     connection.close()
 
 
-TLS_ROLE_SKIP_REASON = (
-    "TLS server (clientcert=verify-full): the client certificate CN must equal the login role, and "
-    "database/certs/generate-certs.sh issues one client CN (PG_CLIENT_CN). A random login role cannot "
-    "present a matching certificate, so the application-role tests are skipped under TLS."
-)
-
-
 @pytest.fixture(scope="module")
-def app_engine(audit_db):
-    """Engine that connects as a login role which is a member of surgitwin_app."""
-    with audit_db.connect() as conn:
-        if conn.execute(text("SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()")).scalar():
-            pytest.skip(TLS_ROLE_SKIP_REASON)
-    role = f"surgitwin_app_login_{secrets.token_hex(4)}"
-    password = secrets.token_hex(16)
+def app_role(audit_db):
+    """NOLOGIN scratch role that is a member of surgitwin_app. Reached with SET ROLE, never a login."""
+    role = f"surgitwin_app_scratch_{secrets.token_hex(4)}"
     with audit_db.begin() as conn:
-        conn.exec_driver_sql(f'CREATE ROLE "{role}" LOGIN PASSWORD \'{password}\'')
+        conn.exec_driver_sql(f'CREATE ROLE "{role}" NOLOGIN')
         conn.exec_driver_sql(f'GRANT surgitwin_app TO "{role}"')
-    engine = create_engine(audit_db.url.set(username=role, password=password), pool_pre_ping=True)
     try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        yield engine
+        yield role
     finally:
-        engine.dispose()
         with audit_db.begin() as conn:
             conn.exec_driver_sql(f'DROP ROLE IF EXISTS "{role}"')
+
+
+@contextmanager
+def app_connection(audit_db, role):
+    """
+    Connection from the certified login with SET ROLE to the scratch role. The connection holds no
+    open transaction on entry. RESET ROLE runs on exit, even after a failed statement.
+    """
+    with audit_db.connect() as conn:
+        conn.execute(text(f'SET ROLE "{role}"'))
+        conn.commit()
+        try:
+            yield conn
+        finally:
+            conn.rollback()
+            conn.execute(text("RESET ROLE"))
+            conn.commit()
 
 
 def _insert_user(db, username, email):
@@ -106,9 +111,9 @@ def _insert_user(db, username, email):
     ).scalar()
 
 
-def _app_error(engine, statement):
-    """Run one statement as the application login role in its own transaction. Return the error text."""
-    with engine.connect() as conn:
+def _app_error(audit_db, role, statement):
+    """Run one statement as the scratch role in its own transaction. Return the error text."""
+    with app_connection(audit_db, role) as conn:
         try:
             with conn.begin():
                 conn.execute(text(statement))
@@ -179,13 +184,15 @@ class TestSharedAccountRejection:
 class TestApplicationRoleBoundary:
     """The application role cannot alter the immutability triggers or the record tables (G1.1, G1.4)."""
 
-    def test_application_login_is_member_of_surgitwin_app(self, app_engine):
-        with app_engine.connect() as conn:
+    def test_application_login_is_member_of_surgitwin_app(self, audit_db, app_role):
+        with app_connection(audit_db, app_role) as conn:
             current = conn.execute(text("SELECT current_user")).scalar()
+            login = conn.execute(text("SELECT session_user")).scalar()
             member = conn.execute(
                 text("SELECT pg_has_role(current_user, 'surgitwin_app', 'MEMBER')")
             ).scalar()
-        assert current.startswith("surgitwin_app_login_")
+        assert current == app_role
+        assert login == audit_db.url.username
         assert member is True
 
     def test_record_tables_and_users_are_owned_by_surgitwin_owner(self, session):
@@ -211,37 +218,38 @@ class TestApplicationRoleBoundary:
             "DROP TRIGGER audit_log_prevent_update ON audit_log",
         ],
     )
-    def test_trigger_disable_and_alter_attempts_fail(self, app_engine, statement):
-        message = _app_error(app_engine, statement)
+    def test_trigger_disable_and_alter_attempts_fail(self, audit_db, app_role, statement):
+        message = _app_error(audit_db, app_role, statement)
         assert "must be owner" in message, message
 
     @pytest.mark.parametrize("table_name", RECORD_TABLES)
-    def test_truncate_fails_for_application_role(self, app_engine, table_name):
-        message = _app_error(app_engine, f"TRUNCATE {table_name}")
+    def test_truncate_fails_for_application_role(self, audit_db, app_role, table_name):
+        message = _app_error(audit_db, app_role, f"TRUNCATE {table_name}")
         assert "permission denied" in message, f"{table_name}: {message}"
 
     @pytest.mark.parametrize("table_name", RECORD_TABLES)
-    def test_update_and_delete_fail_for_application_role(self, app_engine, table_name):
-        update_message = _app_error(app_engine, f"UPDATE {table_name} SET id = id WHERE false")
-        delete_message = _app_error(app_engine, f"DELETE FROM {table_name} WHERE false")
+    def test_update_and_delete_fail_for_application_role(self, audit_db, app_role, table_name):
+        update_message = _app_error(audit_db, app_role, f"UPDATE {table_name} SET id = id WHERE false")
+        delete_message = _app_error(audit_db, app_role, f"DELETE FROM {table_name} WHERE false")
         assert "permission denied" in update_message, f"{table_name}: {update_message}"
         assert "permission denied" in delete_message, f"{table_name}: {delete_message}"
 
-    def test_create_trigger_fails_for_application_role(self, app_engine):
+    def test_create_trigger_fails_for_application_role(self, audit_db, app_role):
         message = _app_error(
-            app_engine,
+            audit_db,
+            app_role,
             "CREATE TRIGGER app_probe BEFORE INSERT ON observations FOR EACH ROW "
             "EXECUTE FUNCTION compute_hash_chain()",
         )
         assert "permission denied" in message, message
 
-    def test_session_replication_role_fails_for_application_role(self, app_engine):
-        message = _app_error(app_engine, "SET session_replication_role = replica")
+    def test_session_replication_role_fails_for_application_role(self, audit_db, app_role):
+        message = _app_error(audit_db, app_role, "SET session_replication_role = replica")
         assert "permission denied" in message, message
 
-    def test_users_delete_and_truncate_fail_for_application_role(self, app_engine):
-        assert "permission denied" in _app_error(app_engine, "DELETE FROM users WHERE false")
-        assert "permission denied" in _app_error(app_engine, "TRUNCATE users")
+    def test_users_delete_and_truncate_fail_for_application_role(self, audit_db, app_role):
+        assert "permission denied" in _app_error(audit_db, app_role, "DELETE FROM users WHERE false")
+        assert "permission denied" in _app_error(audit_db, app_role, "TRUNCATE users")
 
     def test_immutability_triggers_stay_enabled_after_attempts(self, session):
         enabled = session.execute(
@@ -259,8 +267,8 @@ class TestApplicationRoleBoundary:
 class TestApplicationRolePermittedPath:
     """The application role keeps the grants it needs, and its user updates are captured (G1.2)."""
 
-    def test_application_insert_on_record_table_succeeds(self, app_engine):
-        with app_engine.connect() as conn:
+    def test_application_insert_on_record_table_succeeds(self, audit_db, app_role):
+        with app_connection(audit_db, app_role) as conn:
             trans = conn.begin()
             conn.execute(
                 text("INSERT INTO observations (observation_code, value_quantity, fhir_resource) "
@@ -269,8 +277,8 @@ class TestApplicationRolePermittedPath:
             )
             trans.rollback()
 
-    def test_application_user_update_is_captured_with_application_actor(self, app_engine):
-        with app_engine.connect() as conn:
+    def test_application_user_update_is_captured_with_application_actor(self, audit_db, app_role):
+        with app_connection(audit_db, app_role) as conn:
             trans = conn.begin()
             user_id = conn.execute(
                 text("INSERT INTO users (username, email, password_hash, role) "
@@ -290,8 +298,8 @@ class TestApplicationRolePermittedPath:
         assert rows[-1]["prev"] is None
         assert rows[-1]["new"] is not None
 
-    def test_application_identity_change_is_rejected(self, app_engine):
-        with app_engine.connect() as conn:
+    def test_application_identity_change_is_rejected(self, audit_db, app_role):
+        with app_connection(audit_db, app_role) as conn:
             trans = conn.begin()
             user_id = conn.execute(
                 text("INSERT INTO users (username, email, password_hash, role) "

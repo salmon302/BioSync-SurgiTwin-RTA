@@ -84,3 +84,7 @@ Items the document owner confirms before SRS.md becomes v1.1.0:
 * The deadline placeholder mechanism is accepted: [RTA_DEADLINE_MS] enters FR-RTA-002, FR-RTA-004, and NFR-REL-001 with the Phase 3 task 3.6 WCET measurement under FR-VV-004 as the only value source, and Phase 3 fills the number in the SRS and the VTM without a further document review of the clause structure.
 * The VTM-by-reference arrangement is accepted: vv/traceability/vtm.md is named the authoritative VTM covering all 31 requirement IDs, the SRS Section 5 table is a non-authoritative summary extract that defers to the file on any disagreement, and refreshing the extract is part of each document revision.
 * The version, status label, and revision-history row are accepted: line 4 moves to 1.1.0 with the Blocker-closed status text, the Section 6 revision-history row in Section 3 is added, and the FR-RTA-002 mapping-cell choice flagged under VAL-003 (adopt the VTM cell with the VAL-009 note, or keep the v1.0.0 citations) is decided.
+
+## 5. Status
+
+Approved by the document owner on 2026-10-14. Applied to SRS.md v1.1.0 by this change; implementation log: SNDEV/docs/impl-2026-10-14-srs-v1.1-apply.md. One documented correction: the VAL-001 insert numeral changed from 10 to 20 of the 31 IDs so the paragraph matches the approved Group B row additions and the VAL-003 row split (document-owner decision, 2026-10-14). The vv/traceability/vtm.md marker tails were retagged per the VAL-001 impact note, under the VTM owner scope. No other wording changes.

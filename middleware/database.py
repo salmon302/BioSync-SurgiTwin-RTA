@@ -12,10 +12,10 @@ Adaptations:
     compliance records.
 """
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from sqlalchemy.exc import OperationalError
-from typing import Generator
+from typing import Generator, Optional
 import os
 import time
 import logging
@@ -126,6 +126,42 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Base class for declarative models
 Base = declarative_base()
+
+# Audit actor propagation (FR-DAT-004). The audit-capture trigger in database/migrations/004-audit-capture.sql
+# reads biosync.actor. The application sets it from the authenticated JWT subject with set_config(..., true),
+# which is SET LOCAL semantics: the value ends with the transaction, so a pooled connection never carries an
+# actor into a later transaction. The value is applied again at the start of every transaction of the session,
+# because the session keeps the actor in session.info across commits.
+ACTOR_SETTING = "biosync.actor"
+ACTOR_MAX_LENGTH = 255  # audit_log.actor_id is VARCHAR(255)
+
+
+def _apply_actor(session: Session, connection) -> None:
+    actor: Optional[str] = session.info.get("actor")
+    if actor:
+        connection.execute(
+            text("SELECT set_config(:setting, :actor, true)"),
+            {"setting": ACTOR_SETTING, "actor": actor},
+        )
+
+
+def set_actor(session: Session, actor: str) -> None:
+    """
+    Attribute the session's audited writes to ``actor`` (the JWT subject).
+
+    Raises ValueError when actor is not a non-empty string of at most ACTOR_MAX_LENGTH characters.
+    Without a call to set_actor, the trigger records the database session user instead.
+    """
+    if not isinstance(actor, str) or not actor or len(actor) > ACTOR_MAX_LENGTH:
+        raise ValueError("actor must be a non-empty string of at most 255 characters")
+    session.info["actor"] = actor
+    if session.in_transaction():
+        _apply_actor(session, session.connection())
+
+
+@event.listens_for(Session, "after_begin")
+def _set_actor_on_begin(session: Session, transaction, connection) -> None:
+    _apply_actor(session, connection)
 
 
 def warm_up_connection(max_attempts: int = DB_RECONNECT_MAX_ATTEMPTS) -> bool:

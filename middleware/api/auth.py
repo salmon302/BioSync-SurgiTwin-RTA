@@ -11,11 +11,14 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 import bcrypt
 from typing import Optional, List
 import logging
 import os
 from uuid import uuid4
+
+from database import ACTOR_MAX_LENGTH, get_db, set_actor
 
 logger = logging.getLogger(__name__)
 
@@ -193,11 +196,16 @@ class TokenData(BaseModel):
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
 ) -> User:
     """
     Dependency to extract and validate JWT token from Authorization header.
     Returns authenticated User object or raises 401 Unauthorized.
+
+    The verified subject is set as the audit actor (FR-DAT-004) on the request session. FastAPI
+    caches dependencies per request, so a route that also depends on get_db receives this same
+    session and its audited writes carry the subject.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -222,6 +230,8 @@ async def get_current_user(
         
         if username is None:
             raise credentials_exception
+        if not isinstance(username, str) or not username or len(username) > ACTOR_MAX_LENGTH:
+            raise credentials_exception
             
         token_data = TokenData(
             username=username,
@@ -233,6 +243,8 @@ async def get_current_user(
     except JWTError as e:
         logger.warning(f"JWT validation failed: {e}")
         raise credentials_exception
+
+    set_actor(db, token_data.username)
     
     # In production, you would validate against database
     # For now, return user from token

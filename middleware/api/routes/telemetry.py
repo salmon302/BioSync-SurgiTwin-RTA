@@ -34,7 +34,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
-from api.auth import require_scope, verify_token
+from api.auth import _scopes_from_claim, require_scope, verify_token
 from api.middleware.response_time import (
     get_metrics,
     record_ws_connection,
@@ -330,7 +330,7 @@ async def telemetry_stream(websocket: WebSocket, token: Optional[str] = None):
         await websocket.close(code=4401, reason="Token has no subject")
         return
 
-    scopes = payload.get("scope") or payload.get("scopes") or []
+    scopes = _scopes_from_claim(payload.get("scope") or payload.get("scopes"))
     if "telemetry_read" not in scopes and "admin" not in scopes:
         await websocket.close(code=4403, reason="Insufficient scope")
         return

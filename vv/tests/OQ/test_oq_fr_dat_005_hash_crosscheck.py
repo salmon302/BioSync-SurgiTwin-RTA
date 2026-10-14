@@ -11,10 +11,10 @@ Acceptance:
     must report the exact broken row ID in 100% of in-scope cases. The Python verifier must agree.
   * The nightly report in database/migrations/hash-chain-check.sql returns the same first broken row.
 
-Gateway open item (carried as known debt): the Gateway Python hash_chain.py used
-json.dumps(sort_keys=True), which did not match the SQL digest. KNOWN_LIMIT_VECTORS records the
-JSON number forms that psycopg2 cannot round-trip. Those cases are xfail (strict) and the SQL
-verifier remains the authority for them.
+JSON values are passed to the digest as JsonText (the jsonb text), so exponent input and decimals
+with more than 17 significant digits are exact. The verifier reads data_prev::text and
+data_new::text, which keeps SQL NULL and JSON null distinct (findings F4 and F5). The full
+value-type matrix and the Python float boundary are in test_oq_fr_dat_005_json_types.py.
 """
 
 import json
@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import text
 
-from engine.hash_chain import GENESIS_HASH, compute_hash, compute_test_vector, verify_chain
+from engine.hash_chain import GENESIS_HASH, JsonText, compute_hash, compute_test_vector, verify_chain
 
 PINNED_VECTOR_DIGEST = "609c640ee61ad85a8a522dc383127ca16458821b26563def228b2f70e6a73b21"
 OCCURRED_AT = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -49,9 +49,6 @@ JSON_VECTORS = [
     ("array_empty", "[]"),
     ("nested", '{"b": [1, "x", null, true], "a": {"zz": 1, "y": 2}, "aaa": false}'),
     ("key_order", '{"bb": 1, "a": 2, "aaa": 3, "ab": 4, "\\u00e9": 5}'),
-]
-
-KNOWN_LIMIT_VECTORS = [
     ("float_exponent_input", "1e3"),
     ("float_more_than_17_digits", "3.14159265358979323846"),
 ]
@@ -90,6 +87,14 @@ def _sql_digest(engine, raw_new):
         ).scalar()
 
 
+def _as_json_text(entry):
+    """Wrap jsonb text from the database. SQL NULL stays None; JSON null stays the text 'null'."""
+    for key in ("data_prev", "data_new"):
+        if entry[key] is not None:
+            entry[key] = JsonText(entry[key])
+    return entry
+
+
 def _build_chain(session, count):
     ids = []
     for i in range(count):
@@ -119,11 +124,12 @@ def _sql_verify(session):
 def _python_verify(session):
     rows = session.execute(
         text(
-            "SELECT id, prev_hash, current_hash, occurred_at, actor_id, data_prev, data_new, reason "
+            "SELECT id, prev_hash, current_hash, occurred_at, actor_id, "
+            "data_prev::text AS data_prev, data_new::text AS data_new, reason "
             "FROM audit_log ORDER BY id"
         )
     ).mappings().all()
-    return verify_chain([dict(row) for row in rows])
+    return verify_chain([_as_json_text(dict(row)) for row in rows])
 
 
 def _disable_trigger(session, trigger_name):
@@ -219,20 +225,7 @@ def test_sql_digest_matches_python_digest(db_engine):
 @pytest.mark.db
 @pytest.mark.parametrize("name, raw", JSON_VECTORS, ids=[name for name, _ in JSON_VECTORS])
 def test_sql_digest_matches_python_for_json_vector(db_engine, name, raw):
-    expected = compute_hash(GENESIS_HASH, OCCURRED_AT, "vector_user", json.loads(raw), None, "vector")
-    assert _sql_digest(db_engine, raw) == expected
-
-
-@pytest.mark.oq
-@pytest.mark.db
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known limit: psycopg2 decodes JSON numbers to float, so exponent input and more than "
-    "17 significant digits cannot round-trip. The SQL verifier is authoritative for these values.",
-)
-@pytest.mark.parametrize("name, raw", KNOWN_LIMIT_VECTORS, ids=[name for name, _ in KNOWN_LIMIT_VECTORS])
-def test_known_limit_json_number_text(db_engine, name, raw):
-    expected = compute_hash(GENESIS_HASH, OCCURRED_AT, "vector_user", json.loads(raw), None, "vector")
+    expected = compute_hash(GENESIS_HASH, OCCURRED_AT, "vector_user", JsonText(raw), None, "vector")
     assert _sql_digest(db_engine, raw) == expected
 
 

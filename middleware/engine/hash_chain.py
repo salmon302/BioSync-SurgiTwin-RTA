@@ -9,14 +9,18 @@ Provides:
   audit_chain_digest() in database/migrations/003-triggers.sql
 - verify_chain(): Verifies linkage and digests for a chronological list of entries
 - get_genesis_hash(): Returns the genesis block hash
+- JsonText: JSON document text, rendered without loss of numeric digits
 
-Canonical input rendering (must match the SQL function):
+Canonical input rendering (must match the SQL function, see SNDEV/docs/impl-2026-10-14-hash-digest-equivalence.md):
 - T_i is rendered as UTC with microseconds, e.g. 2026-10-13T22:34:45.123456Z.
-- D_prev and D_new are rendered as PostgreSQL jsonb::text. Object keys are ordered
-  by length and then by bytes, with ", " and ": " separators. A missing D_prev is "{}".
-  D_new is NOT NULL in audit_log, so a JSON null in D_new is rendered as null.
-- Floats are rendered in plain decimal notation from their shortest repr, which matches
-  jsonb numeric output for values written in plain notation.
+- D_prev and D_new are rendered as PostgreSQL jsonb::text. Object keys are ordered by byte
+  length and then by bytes, with ", " and ": " separators. A missing D_prev (Python None,
+  SQL NULL) is "{}". A JSON null is "null". D_new is NOT NULL in audit_log, so a Python None
+  in D_new is rendered as null.
+- Numbers keep their decimal digits and scale. Exponent form is expanded to plain notation,
+  and negative zero loses its sign.
+- A JsonText value is parsed with Decimal numbers, so exponent input and more than 17
+  significant digits are exact. Plain Python floats use their shortest repr.
 - A missing actor_id or reason is the empty string.
 """
 
@@ -33,6 +37,10 @@ logger = logging.getLogger(__name__)
 GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000"
 
 
+class JsonText(str):
+    """JSON document text (for example jsonb::text from PostgreSQL). Numbers keep exact digits."""
+
+
 def _utc_text(ts: datetime) -> str:
     """Render a timestamp as UTC text with microseconds (matches to_char in SQL)."""
     if ts.tzinfo is None:
@@ -41,21 +49,57 @@ def _utc_text(ts: datetime) -> str:
     return ts.strftime("%Y-%m-%dT%H:%M:%S.") + f"{ts.microsecond:06d}Z"
 
 
+def _reject_constant(name: str) -> None:
+    raise ValueError(f"{name} is not valid jsonb")
+
+
+def _string_bytes(value: str) -> bytes:
+    """Return the UTF-8 bytes of a string, rejecting what jsonb rejects (NUL, lone surrogates)."""
+    if "\x00" in value:
+        raise ValueError("NUL character is not valid in jsonb")
+    try:
+        return value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("lone surrogate is not valid in jsonb") from exc
+
+
+def _jsonb_string(value: str) -> str:
+    _string_bytes(value)
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _jsonb_number(value: Decimal) -> str:
+    if not value.is_finite():
+        raise ValueError("non-finite number is not valid jsonb")
+    if value.is_zero():
+        return format(abs(value), "f")
+    return format(value, "f")
+
+
 def _jsonb_text(value: Any) -> str:
     """Render a JSON value the way PostgreSQL renders jsonb::text."""
+    if isinstance(value, JsonText):
+        return _jsonb_text(json.loads(value, parse_float=Decimal, parse_int=Decimal, parse_constant=_reject_constant))
     if value is None:
         return "null"
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
         return str(value)
+    if isinstance(value, Decimal):
+        return _jsonb_number(value)
     if isinstance(value, float):
-        return format(Decimal(repr(value)), "f")
+        return _jsonb_number(Decimal(repr(value)))
     if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=False)
+        return _jsonb_string(value)
     if isinstance(value, dict):
-        keys = sorted(value.keys(), key=lambda k: (len(k.encode("utf-8")), k.encode("utf-8")))
-        parts = [f"{json.dumps(k, ensure_ascii=False)}: {_jsonb_text(value[k])}" for k in keys]
+        items = []
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError("JSON object keys must be strings")
+            items.append((_string_bytes(key), key, item))
+        items.sort(key=lambda entry: (len(entry[0]), entry[0]))
+        parts = [f"{_jsonb_string(key)}: {_jsonb_text(item)}" for _, key, item in items]
         return "{" + ", ".join(parts) + "}"
     if isinstance(value, list):
         return "[" + ", ".join(_jsonb_text(v) for v in value) + "]"
@@ -80,8 +124,8 @@ def compute_hash(
         previous_hash: Hash of the previous entry in the chain (H_{i-1})
         occurred_at: Database-generated timestamp (T_i)
         actor_id: Authenticated user or API token identity (U_i)
-        data_new: New row state (D_new)
-        data_prev: Previous row state (D_prev), None for inserts
+        data_new: New row state (D_new). Use JsonText for JSON text.
+        data_prev: Previous row state (D_prev), None for inserts (SQL NULL). Use JsonText for JSON text.
         reason: Human-readable change justification (R_i)
 
     Returns:
@@ -107,7 +151,10 @@ def verify_chain(audit_entries: List[dict]) -> Tuple[bool, Optional[int]]:
     Args:
         audit_entries: Audit log entries in chronological (id ascending) order. Each entry
             has keys: id, prev_hash, current_hash, occurred_at, actor_id, data_prev,
-            data_new, reason.
+            data_new, reason. Values read from a database cursor must be selected as
+            data_prev::text and data_new::text and wrapped in JsonText, so SQL NULL stays
+            None and JSON null is "null". Decoded Python values are accepted but are subject
+            to the float boundary described in the implementation log.
 
     Returns:
         Tuple of (is_valid, broken_at_id). broken_at_id is None when the chain is valid.

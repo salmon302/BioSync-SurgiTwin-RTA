@@ -9,8 +9,9 @@ Acceptance (runs without the native engine):
 The full engine round trip (initialization, stepping, serialization) is covered by the IQ-4 and
 OQ-16 suites, which run only where the bindings are present.
 
-Limitation: SimulationManager.step_simulation is synchronous. The ProcessPoolExecutor delegation of
-FR-MS-006 is not active (docs/migration-map.md, open item).
+Design: PulseWorker runs one long-lived spawned worker process per engine instance. The native engine
+is created inside that worker, steps are awaited off the event loop with a bounded timeout, and
+initialization fails closed on import failure or worker crash (commit 5fb26a3, FR-MS-006).
 """
 
 import importlib.util

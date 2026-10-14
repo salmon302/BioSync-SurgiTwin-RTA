@@ -1,0 +1,9 @@
+# PQ load and harness tooling (vv/tests/PQ). Exact pins only (AGENTS.md section 6.2).
+# Purpose: Locust load definition (locustfile.py) and the WebSocket relay session harness
+# (test_pq_relay_sessions.py). Task reference: DEVELOPMENT_PLAN.md Phase 1 task 1.6.
+# SOUP inventory: sim/SOUP.md.
+# Shared runtime and test pins (psycopg2-binary, python-jose, httpx, pytest) come from middleware.
+-r ../../../middleware/requirements-test.txt
+
+locust==2.46.7
+websockets==17.2

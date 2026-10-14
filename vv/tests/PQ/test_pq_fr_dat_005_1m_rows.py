@@ -55,10 +55,6 @@ END $$;
 """
 
 
-@pytest.mark.skipif(
-    not PQ3_DATABASE_URL,
-    reason="Set BIOSYNC_PQ3_DATABASE_URL to a dedicated PostgreSQL database to run PQ-3 (1M rows).",
-)
 def _recreate_database(admin_url: str, database_url: str) -> None:
     import psycopg2
     from psycopg2 import sql
@@ -74,6 +70,10 @@ def _recreate_database(admin_url: str, database_url: str) -> None:
         admin.close()
 
 
+@pytest.mark.skipif(
+    not PQ3_DATABASE_URL,
+    reason="Set BIOSYNC_PQ3_DATABASE_URL to a dedicated PostgreSQL database to run PQ-3 (1M rows).",
+)
 def test_1m_rows_hash_chain_under_60s():
     import psycopg2
 

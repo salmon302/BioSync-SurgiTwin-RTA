@@ -13,9 +13,11 @@ Credentials are not stored in this file.
 """
 
 import pathlib
+from contextlib import contextmanager
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 import os
@@ -24,7 +26,15 @@ TEST_DATABASE_URL = os.getenv("BIOSYNC_TEST_DATABASE_URL", "")
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / "database" / "migrations"
-MIGRATION_FILES = ["001-extensions.sql", "002-schema.sql", "003-triggers.sql", "006-telemetry-sessions.sql"]
+# 005 runs last because its grants name telemetry_sessions, which 006 creates.
+MIGRATION_FILES = [
+    "001-extensions.sql",
+    "002-schema.sql",
+    "003-triggers.sql",
+    "004-audit-capture.sql",
+    "006-telemetry-sessions.sql",
+    "005-roles.sql",
+]
 
 
 def apply_migrations(engine) -> None:
@@ -32,6 +42,35 @@ def apply_migrations(engine) -> None:
     with engine.begin() as conn:
         for name in MIGRATION_FILES:
             conn.exec_driver_sql((MIGRATIONS_DIR / name).read_text(encoding="utf-8"))
+
+
+@contextmanager
+def scratch_database(name: str):
+    """
+    Create a disposable database on the server named by BIOSYNC_TEST_DATABASE_URL, apply the
+    migrations, and yield its engine. The database is dropped on exit. Skips when no database is
+    configured or reachable. The name must be a fixed test identifier, never user input.
+    """
+    if not TEST_DATABASE_URL:
+        pytest.skip("BIOSYNC_TEST_DATABASE_URL not set; DB-dependent tests skipped")
+    base = make_url(TEST_DATABASE_URL)
+    admin = create_engine(base.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    try:
+        with admin.connect() as conn:
+            conn.exec_driver_sql(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
+            conn.exec_driver_sql(f"CREATE DATABASE {name}")
+    except Exception as exc:
+        admin.dispose()
+        pytest.skip(f"PostgreSQL not reachable at BIOSYNC_TEST_DATABASE_URL ({exc.__class__.__name__})")
+    engine = create_engine(base.set(database=name), pool_pre_ping=True)
+    try:
+        apply_migrations(engine)
+        yield engine
+    finally:
+        engine.dispose()
+        with admin.connect() as conn:
+            conn.exec_driver_sql(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
+        admin.dispose()
 
 
 def execute_expecting_rejection(session: Session, statement) -> str:

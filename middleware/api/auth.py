@@ -25,6 +25,20 @@ JWT_EXPIRATION_HOURS = 1
 JWT_REFRESH_EXPIRATION_DAYS = 7
 
 
+def _scopes_from_claim(value) -> List[str]:
+    """
+    Return the scope names in a JWT scope claim.
+
+    The OAuth form is a space-delimited string. A list is accepted for tokens issued
+    with the earlier BioSync claim format. Any other value grants no scopes.
+    """
+    if isinstance(value, str):
+        return value.split()
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str)]
+    return []
+
+
 def _load_jwt_secret() -> str:
     """
     Load the JWT signing secret from the environment.
@@ -204,7 +218,7 @@ async def get_current_user(
         
         username: str = payload.get("sub")
         role: str = payload.get("role")
-        scopes: List[str] = payload.get("scope") or payload.get("scopes") or []
+        scopes: List[str] = _scopes_from_claim(payload.get("scope") or payload.get("scopes"))
         
         if username is None:
             raise credentials_exception
@@ -309,7 +323,7 @@ def verify_refresh_token(token: str) -> Optional[User]:
         
         username: str = payload.get("sub")
         role: str = payload.get("role")
-        scopes: List[str] = payload.get("scope") or payload.get("scopes") or []
+        scopes: List[str] = _scopes_from_claim(payload.get("scope") or payload.get("scopes"))
         
         if username is None:
             return None

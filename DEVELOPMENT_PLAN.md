@@ -3,7 +3,7 @@
 **Version:** 1.0 (draft)  
 **Date:** 2026-10-13  
 **Derived From:** SRS.md v1.0.0  
-**Status:** Draft with open validation findings (see Section 6). Phase 0 complete. Phase 1 in progress.
+**Status:** Draft with open validation findings (see Section 6). Phase 0 complete. Phase 1 complete, with gates G1.1 to G1.8 closed (G1.8 with recorded boundaries). Phase 2 in progress (kickoff 2026-10-14, `SNDEV/docs/impl-2026-10-14-phase2-kickoff.md`). SRS.md v1.1.0 was applied 2026-10-14 (`SNDEV/docs/impl-2026-10-14-srs-v1.1-apply.md`), closing Blockers VAL-001 to VAL-004. Major and Minor findings remain open.
 
 ---
 
@@ -142,13 +142,13 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 
 ---
 
-### Phase 1: Informatics Baseline (IN PROGRESS)
+### Phase 1: Informatics Baseline (DONE)
 
 **Goal:** Qualify the migrated compliance, hash chain, authentication, and FHIR baseline on PostgreSQL 15, complete the FR-DAT-001 three-tier relay, and close Gateway open items R2 and R3.
 
-**Status:** Task 1.1 is complete at commit `0b5b8d2`. Tasks 1.2 and 1.3 are CLOSED at commit `ffcf167`: the migrated SQL and the DB-gated suites ran on PostgreSQL 15.19, tamper injection detected 54 of 54 cases, and IQ-5 passes with a platform-conditional `uvloop` pin and `fhir.resources` 8.3.0. Task 1.5 is CLOSED: the telemetry relay was migrated at commit `d0ef2c5` with persistence off the event loop, and commit `654510b` fixed the `middleware/api/auth.py` import defect (F1) and the migration 006 message defect (F6), applied 006 through the compose init and the Alembic baseline, and passed the relay PostgreSQL integration tests. The full suite reports 333 passed, 0 failed, 3 skipped, and 5 xfailed on Python 3.11.9, with IQ-2 passing. Task 1.7 is complete at commit `12147f6` with an interim VTM of 31 rows. Gate G1.3 is PASS at `4d2a372`: the digest cross-check matches Python and SQL for 77 JSON vectors, the injection suite detects 54 of 54 cases, and two boundaries stay open (tail deletion needs an external anchor, finding F3, and decoded-value callers must use the JsonText path). Tasks 1.4, 1.8, 1.9, 1.10, and 1.12 are DONE (commits `a44c163`, `f4b9d8f`, `4d2a372`, and `94fc8d1`; the first CI run is pending a push), so only tasks 1.6 and 1.11 and the G1.8 run remain in Phase 1. Open items are listed in Table 4 of `docs/migration-map.md`. Ledger: `docs/migration-map.md`, `SNDEV/docs/impl-2026-10-13-gateway-migration.md`, and the Phase 1 logs dated 2026-10-13 and 2026-10-14 under `SNDEV/docs/`.
+**Status:** Task 1.1 is complete at commit `0b5b8d2`. Tasks 1.2 and 1.3 are CLOSED at commit `ffcf167`: the migrated SQL and the DB-gated suites ran on PostgreSQL 15.19, tamper injection detected 54 of 54 cases, and IQ-5 passes with a platform-conditional `uvloop` pin and `fhir.resources` 8.3.0. Task 1.5 is CLOSED: the telemetry relay was migrated at commit `d0ef2c5` with persistence off the event loop, and commit `654510b` fixed the `middleware/api/auth.py` import defect (F1) and the migration 006 message defect (F6), applied 006 through the compose init and the Alembic baseline, and passed the relay PostgreSQL integration tests. The full suite reports 333 passed, 0 failed, 3 skipped, and 5 xfailed on Python 3.11.9, with IQ-2 passing. Task 1.7 is complete at commit `12147f6` with an interim VTM of 31 rows. Gate G1.3 is PASS at `4d2a372`: the digest cross-check matches Python and SQL for 77 JSON vectors, the injection suite detects 54 of 54 cases, and two boundaries stay open (tail deletion needs an external anchor, finding F3, and decoded-value callers must use the JsonText path). Tasks 1.4, 1.8, 1.9, 1.10, and 1.12 are DONE (commits `a44c163`, `f4b9d8f`, `4d2a372`, and `94fc8d1`; the first CI run is pending a push), Tasks 1.6 and 1.11 and gate G1.8 closed at commit `7508b91`, so Phase 1 is complete with all gates G1.1 to G1.8 closed (G1.8 with recorded boundaries). The evidence is `SNDEV/docs/impl-2026-10-14-g18-1m-row-run.md` (run record) and `SNDEV/docs/impl-2026-10-14-pq-config.md` (configuration record). Open items are listed in Table 4 of `docs/migration-map.md`. Ledger: `docs/migration-map.md`, `SNDEV/docs/impl-2026-10-13-gateway-migration.md`, and the Phase 1 logs dated 2026-10-13 and 2026-10-14 under `SNDEV/docs/`.
 
-**Estimate:** 25.5 d (22.5 d complete: tasks 1.1, 1.2, 1.3, 1.4, 1.5, 1.7, 1.8, 1.9, 1.10, and 1.12; 3.0 d remaining: tasks 1.6 and 1.11). Completed days are the sum of the done rows: 4.0 + 1.5 + 1.0 + 3.0 + 4.0 + 2.0 + 3.0 + 2.0 + 1.5 + 0.5 = 22.5. Remaining days are the open rows: 2.0 + 1.0 = 3.0. The total is unchanged at 25.5.
+**Estimate:** 25.5 d (25.5 d complete: tasks 1.1 to 1.12, all 12 rows; 0.0 d remaining). Completed days are the sum of the done rows: 4.0 + 1.5 + 1.0 + 3.0 + 4.0 + 2.0 + 2.0 + 3.0 + 2.0 + 1.5 + 1.0 + 0.5 = 25.5. Remaining days are the open rows: none, 0.0. The total is unchanged at 25.5.
 
 #### Tasks
 
@@ -159,12 +159,12 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 | 1.3 Resolve the IQ-5 failure: provision the interpreter from the pinned requirements (`uvloop`, `pandas`, `psycopg2-binary`), check the pins against PyPI, and verify on Python 3.11 | `middleware/requirements.txt` (pins confirmed), IQ-5 PASS | 1.0d (done) |
 | 1.4 Close Gateway R2: set `pg_hba` to `hostssl ... clientcert=verify-full`, add the certificate tooling and TLS settings to `docker-compose.yml`, make verify-full the production default in `middleware/database.py`, and convert the three strict xfail checks into passing tests | `docker-compose.yml`, `middleware/database.py`, `middleware/tests/test_db_ssl_config.py` | 3.0d (done, commit `a44c163`, gate G1.7 PASS) |
 | 1.5 Close Gateway R3: apply the uvloop policy at application startup, migrate the WebSocket telemetry relay with database writes moved off the event loop, and keep the relay inside the three-tier path (FR-DAT-001) | `middleware/api/routes/telemetry.py` (created, migrated from the Gateway), `middleware/api/main.py` | 4.0d (done) |
-| 1.6 Define the test configuration for NFR-PERF-001, NFR-PERF-002, and NFR-PERF-004: deployment target, topology, Locust load definition, measurement point, and statistic | `vv/tests/PQ/locustfile.py` (created) and a configuration record in `SNDEV/docs/` | 2.0d |
+| 1.6 Define the test configuration for NFR-PERF-001, NFR-PERF-002, and NFR-PERF-004: deployment target, topology, Locust load definition, measurement point, and statistic | `vv/tests/PQ/locustfile.py` (created) and a configuration record in `SNDEV/docs/` | 2.0d (done, commit `7508b91`, configuration record `SNDEV/docs/impl-2026-10-14-pq-config.md`) |
 | 1.7 Publish the interim complete VTM with 31 rows, each carrying a measurable acceptance metric and a test method. Rename the FR-RTA-002 row to state prediction and add the FR-RTA-003 row (VAL-001, VAL-003). | `vv/traceability/vtm.md` (created) | 2.0d (done) |
 | 1.8 Implement the FR-DAT-003 finalization guard and the FR-DAT-004 generic AFTER trigger that writes audit rows for permitted changes, using the VAL-010 split | `database/migrations/004-audit-capture.sql` (created) | 3.0d (done, commit `f4b9d8f`, gate G1.2 PASS) |
 | 1.9 Separate the table owner role from the application role so the application cannot run `DISABLE TRIGGER`. Seed FR-DAT-006 with a unique-credential constraint on `users` and the RBAC scope check. | `database/migrations/005-roles.sql` (created), `middleware/api/auth.py` | 2.0d (done, commit `f4b9d8f`, gate G1.4 PASS) |
 | 1.10 Show Python and SQL digest equivalence for every JSON value type, beyond the pinned vector | `middleware/engine/hash_chain.py`, `vv/tests/OQ/test_oq_fr_dat_005_hash_crosscheck.py` (done, commit `4d2a372`) | 1.5d (done) |
-| 1.11 Run the 1,000,000-row PQ-3 check on a dedicated database and record throughput and duration | `vv/tests/PQ/test_pq_fr_dat_005_1m_rows.py` run record in `SNDEV/logs/` | 1.0d |
+| 1.11 Run the 1,000,000-row PQ-3 check on a dedicated database and record throughput and duration | `vv/tests/PQ/test_pq_fr_dat_005_1m_rows.py` run record in `SNDEV/logs/` | 1.0d (done, commit `7508b91`, run record `SNDEV/docs/impl-2026-10-14-g18-1m-row-run.md`, 1,000,000 rows verified in 5.84 s against the 60 s bound) |
 | 1.12 Run the qualification job on PostgreSQL 15 in CI, choose and pin the Python lint and type-check tools, and record the first CI run | `.github/workflows/ci.yml`, `middleware/requirements-test.txt` | 0.5d (done, commit `94fc8d1`; first CI run pending push) |
 
 #### Verification Gates
@@ -178,7 +178,7 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 | G1.5 Three-tier relay | FR-DAT-001 | Relay routes perform no synchronous database writes, and `middleware/tests/test_uvloop_enabled.py` PASSES | PASS (`654510b`, relay code from `d0ef2c5`; no synchronous database writes on the event loop, uvloop policy test green) |
 | G1.6 FHIR path | FR-DAT-007 | `vv/tests/OQ/test_oq_fr_dat_007_fhir_http.py` PASSES, with HTTP 422 and OperationOutcome for invalid input | PASS (`654510b`, HTTP 422 with OperationOutcome) |
 | G1.7 Transport security | NFR-SEC-001 | Zero xfail markers remain in `middleware/tests/test_db_ssl_config.py`, and the production default is verify-full | PASS (`a44c163`, zero xfail markers, verify-full default, no-cert and plaintext connections rejected) |
-| G1.8 Performance scope | NFR-PERF-001, NFR-PERF-002, NFR-PERF-004 | Test configuration recorded for each NFR. A 500-session run on the migrated relay produces audit rows equal to completed requests, with p95 relay latency reported against the 50 ms NFR-PERF-002 bound (proposed threshold). | OPEN (tasks 1.6 and 1.11 remain; the 500-session run and p95 relay latency measurement are not done) |
+| G1.8 Performance scope | NFR-PERF-001, NFR-PERF-002, NFR-PERF-004 | Test configuration recorded for each NFR. A 500-session run on the migrated relay produces audit rows equal to completed requests, with p95 relay latency reported against the 50 ms NFR-PERF-002 bound (proposed threshold). | PASS with recorded boundaries (`7508b91`, run g18-run1: 500 of 500 sessions connected, 0 session errors; audit parity PASS, with `telemetry_sessions` at 500 open and 500 finalized, `audit_log` at 1,000 rows (2 per completed session), and `surgical_telemetry` at 3,000 rows equal to accepted points; publisher round trip p95 1.46 ms (n = 300) against the 50 ms bound. Boundaries: (a) 10 points per second offered load, and the 50 ms bound fails at 20 points per second and above on this host because of broadcast fan-out serialization; (b) the relay ran with `DB_SSLMODE=disable`, a deviation from NFR-SEC-001 for this measurement only; (c) NFR-PERF-001 ingestion measured about 12,600 points per second against the 100,000 points per second target, below target and not claimed. Evidence: `SNDEV/docs/impl-2026-10-14-g18-1m-row-run.md`) |
 
 **CSA Risk Annotation:** High Process Risk for tasks 1.1, 1.2, 1.4, 1.5, and 1.7 through 1.11, which cover record immutability, hash chaining, transport security, and access control. Not High Process Risk for tasks 1.3, 1.6, and 1.12. High Process Risk tasks use scripted V&V: PostgreSQL-executed IQ and OQ suites and 100% statement and branch coverage of `middleware/engine/hash_chain.py` and `middleware/database.py`. MC/DC applies only to C++ code, and this phase has none. WCET does not apply.
 
@@ -188,7 +188,7 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 
 **Goal:** Build the FEM soft-tissue scene, the SlicerROS2 and Fast DDS bridge, the Pulse worker delegation, and the FMI 3.0 co-simulation master for FR-MS-001 through FR-MS-004, FR-MS-006, and FR-MS-007.
 
-**Status:** Not started. Phase 1 gates G1.1 through G1.3 are prerequisites for FR-MS-006 persistence.
+**Status:** In progress (kickoff 2026-10-14, `SNDEV/docs/impl-2026-10-14-phase2-kickoff.md`). Phase 1 gates G1.1 through G1.3 prerequisites are PASS, and they are prerequisites for FR-MS-006 persistence.
 
 **Estimate:** 43.0 d.
 
@@ -441,9 +441,13 @@ The SRS audit (`SNDEV/docs/impl-2026-10-13-srs-baseline-validation.md`) found 4 
 ### 6.1 Blocker Findings
 
 1. VAL-001: Should the VTM carry a row for all 31 defined IDs before SRS.md v1.0.0 is re-issued? Interim handling: a complete VTM is maintained in `vv/traceability/vtm.md` with a measurable metric and test method for each ID (Phase 1 task 1.7). The SRS status stays at draft with open validation findings until the amendment lands.
+   Resolved by SRS v1.1.0: Section 5 names `vv/traceability/vtm.md` as the authoritative 31-row VTM, and the Section 5 extract is non-authoritative (now covering 20 of the 31 IDs).
 2. VAL-002: Should the "19 distinct IQ/OQ/PQ protocols" count be replaced by a published protocol register, or removed? Interim handling: the protocol register is kept in `vv/tests/protocol-register.md` (Phase 6 task 6.1). This plan does not use the number 19 as a gate.
+   Resolved by SRS v1.1.0: the "19 protocols" count is replaced by the protocol register reference in FR-VV-005 and NFR-REL-001.
 3. VAL-003: Should FR-RTA-002 (state prediction) and FR-RTA-003 (envelope) be separate VTM rows with separate acceptance metrics? Interim handling: the FR-RTA-002 row is renamed to state prediction and the FR-RTA-003 row is added in Phase 1 task 1.7. Gate G3.3 verifies FR-RTA-003 separately.
+   Resolved by SRS v1.1.0: FR-RTA-002 and FR-RTA-003 carry separate Section 5 rows, each with its own metric.
 4. VAL-004: What is the RTA decision-loop deadline? Interim handling: the candidate deadline is derived from the WCET measurement on the target platform (Phase 3 task 3.6). It is written into the SRS only after that measurement exists.
+   Resolved by SRS v1.1.0: the deadline clause structure is added with the [RTA_DEADLINE_MS] placeholder, and the number is filled from Phase 3 task 3.6 under FR-VV-004.
 
 ### 6.2 Major Findings
 
@@ -453,7 +457,7 @@ The SRS audit (`SNDEV/docs/impl-2026-10-13-srs-baseline-validation.md`) found 4 
 | VAL-006 | Move the 60 FPS, 500 Hz, and divergence definitions to the requirements that own them | 60 FPS in G2.2, 500 Hz in G2.4, divergence as a 30-minute load case | 2 |
 | VAL-007 | Define an observable proxy for "zero main-loop blocking" | Heartbeat gap of 50 ms or less with 10 sessions in G2.5 (proposed) | 2 |
 | VAL-008 | Assign one IEC 62304 class per software item, with the risk file cited | Class C is provisional for High Process Risk items, and each item's class is set in the risk file (VAL-025) | 1, 3 |
-| VAL-009 | Drop DO-178C DAL A and ISO 26262 ASIL D, or write a mapping to IEC 62304 Class C activities | Neither is a certification target in this plan. IEC 62304 Class C governs. | 1 |
+| VAL-009 | Drop DO-178C DAL A and ISO 26262 ASIL D, or write a mapping to IEC 62304 Class C activities | Neither is a certification target in this plan. IEC 62304 Class C governs. Note: the FR-RTA-002 extract row carries the VTM mapping cell with this VAL-009 note. VAL-009 stays open. | 1 |
 | VAL-010 | Split FR-DAT-004 into immutable rows and an append-only change log for permitted edits | Task 1.8 implements audit capture for permitted changes (gate G1.2). The SRS split waits for an amendment. | 1 |
 | VAL-011 | Name the verification method for the fallback controller | Model checking of the discrete switch logic and a Lyapunov argument for the PID or LQR law (task 3.5) | 3 |
 | VAL-012 | Add SOUP requirements for inventory, version pinning, evaluation, and anomaly response | `sim/SOUP.md` inventory created in task 2.2 and extended in each phase. A SOUP requirement is drafted before Phase 2 exits. | 2 |
@@ -475,7 +479,7 @@ The SRS audit (`SNDEV/docs/impl-2026-10-13-srs-baseline-validation.md`) found 4 
 | WCET tooling does not support the target CPU or MCU, or it yields loose bounds | The candidate RTA deadline cannot be stated, and FR-RTA-004 cannot be tested | Medium | Measure on the target with statistical timing (task 3.6), keep the decision path free of heap and locks, and record tool limits in `sim/SOUP.md` |
 | Omniverse / Isaac Sim dependency (GPU class, runtime license, USD version drift) | Phase 7 is blocked, and the NFR-PERF-003 rendering path is unavailable | Medium | Pin the USD and runtime versions. Rendering is Not High Process Risk, so the M&S and RTA tiers do not depend on it. Record the GPU precondition before Phase 7 starts. |
 | Kitware Pulse is single-threaded per patient and its engine object cannot be pickled | ProcessPoolExecutor delegation (FR-MS-006) fails, and the event loop blocks | High | One long-lived worker per engine instance (task 2.5) and heartbeat gate G2.5. The Gateway open item in migration-map Table 3 tracks the blocker. |
-| Gateway R3 remains open (synchronous writes on the relay path); R2 is closed at `a44c163` | NFR-PERF-001 and NFR-PERF-002 cannot be shown met until the G1.8 run is recorded, and inherited Gateway claims stay unverified | Medium | Phase 1 task 1.5 (closed), with gate G1.8 (500-session run, pending) |
+| Gateway R3 relay path: R3 is closed at task 1.5, and R2 is closed at `a44c163`. NFR-PERF-001 ingestion measured below target on the Phase 1 configuration. | NFR-PERF-001 is not met (about 12,600 points per second against 100,000). NFR-PERF-002 holds only at 10 points per second on this host, because the 50 ms bound fails at 20 points per second and above. | Medium | Phase 1 task 1.5 (closed). Gate G1.8 PASS with recorded boundaries at `7508b91`. Revisit NFR-PERF-001 at Phase 5 task 5.6 and with relay tuning. |
 
 ### 7.2 Regulatory Risks
 

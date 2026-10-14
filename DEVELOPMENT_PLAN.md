@@ -3,7 +3,7 @@
 **Version:** 1.0 (draft)  
 **Date:** 2026-10-13  
 **Derived From:** SRS.md v1.0.0  
-**Status:** Draft with open validation findings (see Section 6). Phase 0 complete. Phase 1 complete, with gates G1.1 to G1.8 closed (G1.8 with recorded boundaries). Phase 2 in progress (kickoff 2026-10-14, `SNDEV/docs/impl-2026-10-14-phase2-kickoff.md`). SRS.md v1.1.0 was applied 2026-10-14 (`SNDEV/docs/impl-2026-10-14-srs-v1.1-apply.md`), closing Blockers VAL-001 to VAL-004. Major and Minor findings remain open.
+**Status:** Draft with open validation findings (see Section 6). Phase 0 complete. Phase 1 complete, with gates G1.1 to G1.8 closed (G1.8 with recorded boundaries). Phase 2 in progress (kickoff 2026-10-14, `SNDEV/docs/impl-2026-10-14-phase2-kickoff.md`). SRS.md v1.1.0 was applied 2026-10-14 (`SNDEV/docs/impl-2026-10-14-srs-v1.1-apply.md`), closing Blockers VAL-001 to VAL-004. No commercial licenses are used in development (decision of 2026-10-14, `SNDEV/docs/impl-2026-10-14-no-commercial-licenses.md`). Major and Minor findings remain open.
 
 ---
 
@@ -19,7 +19,7 @@ SurgiTwin-RTA is a closed-loop surgical soft-tissue digital twin and Software-in
 2. Compliance rules are enforced in the database tier first, so immutability and hash chaining hold for direct SQL access as well as for application code.
 3. The CSA risk partition in SRS Section 2.2 sets the test rigor for each feature. High Process Risk features get scripted V&V with MC/DC and WCET analysis. Not High Process Risk features get unit tests and exploratory testing.
 4. Test scripts are written against the ASAM XIL abstraction so that the same script set runs on SIL and HIL targets.
-5. The safety-related C++ cores are checked against MISRA C++:2023 with C++17 pinned. The SRS C++20 wording is an open question in Section 6.
+5. The safety-related C++ cores are checked with an open-source static analysis set with C++17 pinned. MISRA C++:2023 conformity is an adopter-supplied verification. The SRS C++20 wording is an open question in Section 6.
 6. Gateway code is reused through `docs/migration-map.md`, which records every copied, adapted, deferred, and dropped artifact with its origin path.
 7. Evidence lands with each increment. Test output, VTM rows, and the SNDEV phase log are committed with the code they verify.
 
@@ -47,14 +47,14 @@ Rows marked Precondition need a license purchase, a hardware order, or a licensi
 | Edge MCU | ESP32-S3, MessagePack, TensorFlow Lite Micro | 8-bit integer quantized model; TFLM release pinned under `edge/` in Phase 4 | Precondition: ESP32-S3 development board. TFLM is Apache-2.0. MessagePack specification is open. |
 | Build | CMake and CTest | CMake pinned through `CMakeLists.txt`; CTest runs `rta_smoke` now | BSD-3-Clause. |
 | C++ unit tests | Catch2 (planned) | Pinned release added when the first Catch2 suite lands in Phase 3 | BSL-1.0. |
-| Static analysis | Parasoft C/C++test or QA-MISRA | MISRA C++:2023 rule set; tool version pinned to the license | Precondition: commercial license with a CI seat. |
-| Structural coverage and timing | VectorCAST and Cantata | Statement, branch, and MC/DC coverage on C++ High Process Risk modules | Precondition: commercial licenses (Vector Informatik and QA Systems). |
+| Static analysis | Parasoft C/C++test or QA-MISRA | MISRA C++:2023 rule set; tool version pinned to the license for an adopter. Development pins the open-source check set named in task 3.7 (Section 5.1) instead. | Not procured in development. Adoption option for licensees only. |
+| Structural coverage and timing | VectorCAST and Cantata | Statement, branch, and MC/DC coverage on C++ High Process Risk modules. Development pins the gcov-family tooling with Catch2 and CTest (task 3.8) instead. | Not procured in development. Adoption option for licensees only (Vector Informatik and QA Systems). |
 | HIL targets | Speedgoat, dSPACE, or NI SLSC | One target selected in Phase 3 for Phase 4; the other vendors are not procured | Precondition: hardware purchase, vendor XIL software, and lead time. |
 | XIL abstraction | ASAM XIL v3.0.0 Python API | Model Access, Electrical Error Simulation, Service-Oriented Access, and ECU Access ports | Precondition: XIL implementation not yet selected. The standard is open. |
 | Python tests | Pytest and Locust | Pytest for IQ, OQ, PQ, and unit tests. Locust for load generation under NFR-PERF-001 and NFR-PERF-004. | MIT. |
 | Continuous integration | GitHub Actions | `.github/workflows/ci.yml` with a qualification job on an ephemeral PostgreSQL 15 service | GitHub service terms. |
 | Containers | Docker and Docker Compose | `docker-compose.yml`, `middleware/Dockerfile`, `middleware/Dockerfile.pulse` | Apache-2.0 (Compose). Docker Desktop license terms apply to commercial use. |
-| Trace management | Jama or Polarion | Forward and backward trace link API used in Phase 6 | Precondition: commercial license and API access. |
+| Trace management | Jama or Polarion | Forward and backward trace link API, an optional adapter in Phase 6 (task 6.6). Development pins the repository-native trace store (VTM and protocol register) instead. | Not procured in development. Adoption option for licensees only (commercial license and API access). |
 
 ---
 
@@ -222,9 +222,9 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 
 ### Phase 3: RTA Tier (Simplex Switch, Timed Automata, Envelope, Fallback)
 
-**Goal:** Replace the stub RTA placeholders with the deterministic Simplex switch, timed automata state prediction, numeric safety envelope, and verified fallback for FR-RTA-001 through FR-RTA-004, with MISRA, WCET, and MC/DC evidence first.
+**Goal:** Replace the stub RTA placeholders with the deterministic Simplex switch, timed automata state prediction, numeric safety envelope, and verified fallback for FR-RTA-001 through FR-RTA-004, with static analysis, WCET, and MC/DC evidence first.
 
-**Status:** Not started. Phase 1 task 1.7 (VTM with FR-RTA-003 row) is a prerequisite.
+**Status:** Not started. Phase 1 task 1.7 (VTM with FR-RTA-003 row) is a prerequisite. No commercial license is used in development (`SNDEV/docs/impl-2026-10-14-no-commercial-licenses.md`).
 
 **Estimate:** 35.0 d.
 
@@ -238,21 +238,21 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 | 3.4 Implement the envelope checks for tissue wrench and shear limits and the vascular keep-out distance, with numeric limits and a separate VTM row (VAL-003) | `rta/src/safety_envelope.cpp`, `vv/traceability/vtm.md` | 3.0d |
 | 3.5 Implement the PID or LQR fallback controller with its verification method: model checking of the discrete switch logic and a Lyapunov stability argument for the control law (VAL-011) | `rta/include/rta/fallback_controller.h` and `rta/src/fallback_controller.cpp` (created) | 6.0d |
 | 3.6 Measure the decision loop WCET on the target platform, report the statistical bound, and derive the candidate RTA deadline for the SRS amendment (VAL-004) | `rta/tests/wcet/` (created), SNDEV log of the measurement | 4.0d |
-| 3.7 Run the MISRA C++:2023 gate on `rta/` with the licensed tool, with the C++17 pin and a deviation register (VAL-016) | CI static analysis job, deviation register in `vv/traceability/` | 3.0d |
-| 3.8 Build Catch2 and CTest unit suites and reach 100% statement, branch, and MC/DC coverage of `rta/` with VectorCAST or Cantata | `rta/tests/` | 5.0d |
+| 3.7 Run the open-source static analysis gate on `rta/`: pin the tool versions (candidates cppcheck and clang-tidy, selected in this task), run with the C++17 pin, and maintain a deviation register (VAL-016) | CI static analysis job, deviation register in `vv/traceability/` | 3.0d |
+| 3.8 Build Catch2 and CTest unit suites, reach 100% statement and branch coverage of `rta/` with gcov-family tooling, record MC/DC evaluation (Clang 19 or newer llvm-cov) as a work item, and pin pytest-cov | `rta/tests/` | 5.0d |
 | 3.9 Inject faults into the envelope through the ASAM XIL Electrical Error Simulation port | `vv/xil/` fault scripts (created under `vv/xil/`) | 3.0d |
 
 #### Verification Gates
 
 | Gate | Requirement | Acceptance Metric |
 |:-----|:------------|:------------------|
-| G3.1 Simplex core | FR-RTA-001 | Zero MISRA C++:2023 violations on `rta/` with a documented deviation list; 100% statement, branch, and MC/DC coverage; zero heap allocations in the decision path under an allocator hook |
+| G3.1 Simplex core | FR-RTA-001 | Zero findings from the pinned open-source check set on `rta/` with the deviation register attached; 100% statement and branch coverage, and the MC/DC target recorded as a deviation (Section 5.2) until an MC/DC path is verified; zero heap allocations in the decision path under an allocator hook. MISRA C++:2023 conformity is verified only if an adopter runs a conforming tool. |
 | G3.2 Prediction | FR-RTA-002 | Every injected lag and delay case yields a bounded prediction within the candidate deadline, and the fault-injection run finds no unbounded state |
 | G3.3 Envelope | FR-RTA-003 | Stub thresholds are replaced by risk-file values, and boundary tests one step below and one step above each threshold produce the expected accept or reject decision in 100% of cases |
 | G3.4 Fallback | FR-RTA-004 | The fallback controller engages within the candidate deadline in 100% of injected envelope breach and deadline-miss cases |
 | G3.5 Timing | FR-RTA-004 | The WCET bound for the decision loop is measured on the target platform, and the candidate deadline is written into a proposed SRS amendment (VAL-004) |
 
-**CSA Risk Annotation:** High Process Risk for all tasks. Tasks 3.2, 3.3, 3.5, and 3.6 carry WCET analysis on the target platform. Tasks 3.2 through 3.5 require 100% statement, branch, and MC/DC coverage on VectorCAST or Cantata. Task 3.9 uses scripted fault injection through the ASAM XIL EES port.
+**CSA Risk Annotation:** High Process Risk for all tasks. Tasks 3.2, 3.3, 3.5, and 3.6 carry WCET analysis on the target platform. Tasks 3.2 through 3.5 require 100% statement and branch coverage on gcov-family tooling (task 3.8), with MC/DC carried as a recorded deviation (Section 5.2). Task 3.9 uses scripted fault injection through the ASAM XIL EES port.
 
 ---
 
@@ -326,7 +326,7 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 
 **Goal:** Gate every commit with static analysis, ASAM XIL test scripts, structural coverage, WCET reporting, the protocol register, and the trace link engine for FR-VV-001 through FR-VV-005 and NFR-REL-001.
 
-**Status:** Not started. Requires the license procurement in Section 7.3.
+**Status:** Not started. No license procurement is required (decision of 2026-10-14).
 
 **Estimate:** 29.0 d.
 
@@ -335,11 +335,11 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 | Task | Output | Est. |
 |:-----|:-------|:-----|
 | 6.1 Publish the IQ/OQ/PQ protocol register with protocol IDs, file paths, and requirement IDs, replacing the undefined "19 protocols" count (VAL-002) | `vv/tests/protocol-register.md` (created) | 2.0d |
-| 6.2 Extend the MISRA C++:2023 gate to every C++ core on every commit | `.github/workflows/ci.yml` | 2.0d |
+| 6.2 Extend the open-source static analysis gate to every C++ core on every commit | `.github/workflows/ci.yml` | 2.0d |
 | 6.3 Build the ASAM XIL v3.0.0 Python abstraction for the Model Access, Electrical Error Simulation, Service-Oriented Access, and ECU Access ports, with the XIL implementation selected | `vv/xil/` | 6.0d |
 | 6.4 Run one script set unchanged on the SIL target and the selected HIL target, with a per-vendor adapter outside the script count | `vv/xil/` adapters | 5.0d |
-| 6.5 Run coverage and WCET reporting in CI with VectorCAST or Cantata, Catch2, CTest, and Pytest, and generate boundary and failure-mode cases | `.github/workflows/ci.yml` | 4.0d |
-| 6.6 Build the trace engine that pushes forward and backward trace links to Jama or Polarion, hashes each link (VAL-020), and runs the dead-code analysis with a named tool | `vv/traceability/engine/` (created) | 5.0d |
+| 6.5 Run coverage and WCET reporting in CI with the gcov-family tooling, Catch2, CTest, and Pytest, and generate boundary and failure-mode cases | `.github/workflows/ci.yml` | 4.0d |
+| 6.6 Build the trace engine that writes hashed forward and backward trace links to the repository-native trace store (the VTM and the protocol register), hashes each link (VAL-020), and runs the dead-code analysis with a named tool. The Jama or Polarion push is an optional adapter that an adopter enables. | `vv/traceability/engine/` (created) | 5.0d |
 | 6.7 Run a 24-hour sanitizer-enabled soak with the unresolved-defect window defined (VAL-023) | `vv/tests/PQ/test_pq_nfr_rel_001_soak.py` (created) | 3.0d |
 | 6.8 Run the protocol register in CI and archive the results with each run | `.github/workflows/ci.yml`, `SNDEV/logs/` | 2.0d |
 
@@ -347,11 +347,11 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 
 | Gate | Requirement | Acceptance Metric |
 |:-----|:------------|:------------------|
-| G6.1 Static analysis | FR-VV-001 | Zero MISRA C++:2023 violations on every commit across `rta/`, `sim/sofa`, `sim/bridge`, and `sim/fmi`, with the C++17 pin verified |
+| G6.1 Static analysis | FR-VV-001 | Zero findings from the pinned open-source check set on every commit across `rta/`, `sim/sofa`, `sim/bridge`, and `sim/fmi`, with the C++17 pin verified and the deviation register attached. MISRA C++:2023 conformity is verified only if an adopter runs a conforming tool. |
 | G6.2 XIL API | FR-VV-002 | Test scripts import the ASAM XIL v3.0.0 Python API and exercise all four ports (MA, EES, SOC, and ECU Access) |
 | G6.3 Portability | FR-VV-003 | One script set passes unmodified on the SIL target and on the selected HIL target, with zero script edits |
-| G6.4 Coverage and timing | FR-VV-004 | 100% statement, branch, and MC/DC coverage on High Process Risk C++ modules, and a WCET bound with its statistic reported for each timed task |
-| G6.5 Traceability | FR-VV-005 | 31 of 31 defined IDs have forward and backward trace links, zero unlinked dead-code findings from the named tool, and every link hash is recorded |
+| G6.4 Coverage and timing | FR-VV-004 | 100% statement and branch coverage on High Process Risk C++ modules, with the MC/DC target carried as a recorded deviation (Section 5.2) until an MC/DC path is verified, and a WCET bound with its statistic reported for each timed task |
+| G6.5 Traceability | FR-VV-005 | 31 of 31 defined IDs have forward and backward trace links, zero unlinked dead-code findings from the named tool, and every link hash is recorded. The store is the repository-native one (VTM and protocol register). |
 | G6.6 Reliability | NFR-REL-001 | Zero unresolved SIGSEGV in a 24-hour sanitizer-enabled soak, and 100% pass across every protocol in the register |
 
 **CSA Risk Annotation:** All Phase 6 tasks are High Process Risk because they gate High Process Risk modules. Tasks 6.3 and 6.4 run scripted XIL tests, and task 6.7 runs a 24-hour soak. This phase has no Not High Process Risk tasks.
@@ -393,10 +393,12 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 
 | Scope | Tool | Check | Phase |
 |:------|:-----|:------|:------|
-| `rta/` (safety core) | Parasoft C/C++test or QA-MISRA | MISRA C++:2023 with the C++17 pin, using the analysis classes named in FR-VV-001 | 3 (task 3.7) |
-| `sim/sofa/`, `sim/bridge/`, `sim/fmi/` | Parasoft C/C++test or QA-MISRA | MISRA C++:2023 on every commit | 6 (task 6.2) |
+| `rta/` (safety core) | Open-source check set pinned in task 3.7 (candidates: cppcheck and clang-tidy) | Zero findings from the pinned set under the C++17 pin, with the deviation register attached | 3 (task 3.7) |
+| `sim/sofa/`, `sim/bridge/`, `sim/fmi/` | The open-source check set pinned in task 3.7 | Zero findings on every commit | 6 (task 6.2) |
 | `middleware/`, `vv/tests/` (Python) | Lint and type-check tools pinned in `middleware/requirements-test.txt` | Lint and type check on every commit | 1 (task 1.12) |
 | `database/migrations/` | PostgreSQL 15 in the qualification job | Migrations apply cleanly and triggers reject mutations | 1 (task 1.2) |
+
+Recorded gap: neither candidate in the table implements the MISRA C++:2023 rule set. Gates that named zero MISRA C++:2023 violations (G3.1 and G6.1) are restated as zero findings from the pinned set, and MISRA C++:2023 conformity remains an adopter-supplied verification that requires a conforming tool.
 
 Freedom from interference is not asserted by static analysis. Partitioning and memory-isolation evidence is a separate work item (VAL-024), and this plan does not claim it.
 
@@ -404,9 +406,11 @@ Freedom from interference is not asserted by static analysis. Partitioning and m
 
 | CSA Class | Coverage Target | Test Method | Timing Analysis |
 |:----------|:----------------|:------------|:----------------|
-| High Process Risk, C++ | 100% statement, branch, and MC/DC | Scripted V&V on VectorCAST or Cantata, with CTest and Catch2 suites | WCET on the target platform (task 3.6) |
-| High Process Risk, Python | 100% statement and branch | Scripted pytest suites under `vv/tests/` and `middleware/tests/` with coverage measurement | Event-loop heartbeat gap (task 2.5) |
+| High Process Risk, C++ | 100% statement, branch, and MC/DC (MC/DC is a recorded deviation, see below) | Scripted V&V on gcov-family tooling (gcov or llvm-cov), with CTest and Catch2 suites | WCET on the target platform (task 3.6) |
+| High Process Risk, Python | 100% statement and branch | Scripted pytest suites under `vv/tests/` and `middleware/tests/` with coverage measurement (pytest-cov, pinned in task 3.8 or earlier) | Event-loop heartbeat gap (task 2.5) |
 | Not High Process Risk | Unit tests required, with no numeric coverage gate | Automated unit tests and exploratory testing | Not applicable |
+
+MC/DC deviation for C++: the gcov-family tooling reports statement and branch coverage, and it does not report MC/DC. Task 3.8 evaluates an open-source MC/DC path (Clang 19 or newer llvm-cov MC/DC reporting is a candidate, not a commitment). Until that path is verified or an adopter supplies a tool, the MC/DC target is a recorded deviation in the risk file and the deviation register.
 
 No MC/DC tool for Python is selected. Section 7.2 records this gap.
 
@@ -426,7 +430,7 @@ Gateway-numbered files keep their names (for example `test_oq6_ema_convergence.p
 2. The VTM row in `vv/traceability/vtm.md` gives the test method and the acceptance metric. The interim VTM covers all 31 IDs from Phase 1 task 1.7.
 3. The protocol or test file under `vv/tests/` or `rta/tests/` is listed in the protocol register.
 4. The CI qualification job archives the run output, and the phase log in `SNDEV/docs/` cites that output.
-5. The trace engine pushes forward and backward links to Jama or Polarion (Phase 6 task 6.6). Until the ALM tool is licensed, the VTM and the register are the authoritative records.
+5. The trace engine writes forward and backward links to the repository-native store, which is the VTM and the protocol register (Phase 6 task 6.6). A Jama or Polarion push is an optional adapter that an adopter enables.
 
 ### 5.5 Evidence Landing
 
@@ -485,7 +489,7 @@ The SRS audit (`SNDEV/docs/impl-2026-10-13-srs-baseline-validation.md`) found 4 
 
 | Risk | Impact | Likelihood | Mitigation |
 |:-----|:-------|:-----------|:-----------|
-| Proprietary tool qualification for Parasoft, QA-MISRA, VectorCAST, and Cantata | Tool output cannot be relied on as validation evidence without qualification, which becomes an audit finding | High | Select tools that offer vendor qualification kits. Record the tool version and qualification evidence in `SNDEV/docs/` for each gate. |
+| Proprietary tool qualification for Parasoft, QA-MISRA, VectorCAST, and Cantata | Tool output cannot be relied on as validation evidence without qualification, which becomes an audit finding | High | No commercial tool is used in development (decision of 2026-10-14). Conformity claims are limited to the open-source check set, and deviations are recorded in this risk file and the deviation register. An adopter who selects a commercial tool selects one with a vendor qualification kit and records its version and qualification evidence in `SNDEV/docs/`. |
 | DO-178C DAL A and ISO 26262 ASIL D citations apply to other certification contexts | Submission credibility and a rigor target that does not match the device | Medium | Remove both as certification targets, or write the mapping to IEC 62304 Class C activities (VAL-008, VAL-009) |
 | C++17 pin versus the SRS C++17/C++20 wording | The static analysis gate cannot cover C++20 files, so "zero violations" cannot be achieved as written | Medium | Pin the safety cores to C++17 in `CMakeLists.txt`, and settle the C++20 deviation register before gate G3.1 closes (VAL-016) |
 | Python High Process Risk modules have no MC/DC tool | Scripted V&V gap under SRS Section 2.2 | High | Record a deviation in the risk file that requires statement and branch coverage for Python. Move safety-critical logic into C++ modules where MC/DC applies. Decide before Phase 6 starts. |
@@ -496,6 +500,5 @@ The SRS audit (`SNDEV/docs/impl-2026-10-13-srs-baseline-validation.md`) found 4 
 | Risk | Impact | Likelihood | Mitigation |
 |:-----|:-------|:-----------|:-----------|
 | HIL hardware lead times for Speedgoat, dSPACE, or NI SLSC | Phase 4 task 4.5 and Phase 6 task 6.4 slip | High | Place the HIL purchase order at Phase 3 start. Run Phase 4 software tasks on the SIL target until the bench arrives. |
-| License procurement for Parasoft or QA-MISRA, VectorCAST, Cantata, and Jama or Polarion | The MISRA and coverage gates are blocked, and CI seats are unavailable | Medium | Start procurement in Phase 1. Record license decisions in `sim/SOUP.md` before Phase 3 starts. |
 | The FMI master in Phase 2 task 2.8 has no effort estimate in the SRS | Phase 2 overruns and delays Phases 3 and 4 | High | Hold the 8-day estimate with weekly review, and scope the master to the three plant models only |
 | MANO model license terms are not cleared | Task 4.2 is blocked | Medium | Clear the license before Phase 4 starts. Teleoperation proceeds with the One Euro and EMA filters alone. |

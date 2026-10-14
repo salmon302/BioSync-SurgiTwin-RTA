@@ -12,8 +12,9 @@ BIOSYNC_TEST_DATABASE_URL, and that identity is the CN of the client certificate
 database/certs/generate-certs.sh issues (PG_CLIENT_CN, default surgitwin). The fixtures in this file
 never create login roles, so they never present a certificate with a different CN. A test that needs
 a second login identity must issue its own certificate through the same tooling for that CN. The
-application-role module vv/tests/OQ/test_oq_fr_dat_006_access_control.py has no such certificate and
-skips under TLS with a reason.
+application-role module vv/tests/OQ/test_oq_fr_dat_006_access_control.py needs no certificate of its own.
+It reaches the scratch role with SET ROLE from the shared login identity, so it runs under TLS without
+skips (commit 99ec666).
 
 Origin: BioSync-Gateway tests/conftest.py fixture pattern (db_engine, db_session), adapted
 to the SQL migrations. The Gateway created tables with Base.metadata.create_all(), which

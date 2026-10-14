@@ -11,7 +11,9 @@ certificate CN must equal the login role. The shared fixtures use one login iden
 BIOSYNC_TEST_DATABASE_URL, and that identity is the CN of the client certificate that
 database/certs/generate-certs.sh issues (PG_CLIENT_CN, default surgitwin). The fixtures in this file
 never create login roles, so they never present a certificate with a different CN. A test that needs
-a second login identity must issue its own certificate through the same tooling for that CN.
+a second login identity must issue its own certificate through the same tooling for that CN. The
+application-role module vv/tests/OQ/test_oq_fr_dat_006_access_control.py has no such certificate and
+skips under TLS with a reason.
 
 Origin: BioSync-Gateway tests/conftest.py fixture pattern (db_engine, db_session), adapted
 to the SQL migrations. The Gateway created tables with Base.metadata.create_all(), which
@@ -33,7 +35,8 @@ TEST_DATABASE_URL = os.getenv("BIOSYNC_TEST_DATABASE_URL", "")
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / "database" / "migrations"
-# 005 runs last because its grants name telemetry_sessions, which 006 creates.
+# Single source of the migration order for tests. Matches the compose init order and the Alembic
+# baseline. 005 runs last because its grants name telemetry_sessions, which 006 creates.
 MIGRATION_FILES = [
     "001-extensions.sql",
     "002-schema.sql",

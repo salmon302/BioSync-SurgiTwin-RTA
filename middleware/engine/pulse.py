@@ -43,11 +43,14 @@ logger = logging.getLogger(__name__)
 # Database persistence (optional - gracefully degrades if DB unavailable)
 # Append-only: state snapshots and the finalized run are inserted, never updated (SRS FR-DAT-003).
 try:
-    from database import SessionLocal
-    from models import SimulationRun, SimulationState
+    from database import service_session
+    from models import SimulationRun, SimulationState as SimulationStateRecord
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
+
+# Audit identity for the writes in this module. Recorded as audit_log.actor_id (FR-DAT-004).
+PULSE_ENGINE_ACTOR = "service:pulse-engine"
 
 
 class SimulationState(Enum):
@@ -513,9 +516,9 @@ class SimulationManager:
         """
         try:
             payload = json.dumps(engine_state, sort_keys=True)
-            db = SessionLocal()
+            db = service_session(PULSE_ENGINE_ACTOR)
             try:
-                db.add(SimulationState(
+                db.add(SimulationStateRecord(
                     state_uid=str(uuid.uuid4()),
                     run_key=simulation_id,
                     status=status,
@@ -543,7 +546,7 @@ class SimulationManager:
         """Write the finalized simulation run record once (SRS FR-DAT-003)."""
         try:
             started = datetime.fromtimestamp(started_at or time.time(), tz=timezone.utc)
-            db = SessionLocal()
+            db = service_session(PULSE_ENGINE_ACTOR)
             try:
                 db.add(SimulationRun(
                     run_uid=str(uuid.uuid4()),

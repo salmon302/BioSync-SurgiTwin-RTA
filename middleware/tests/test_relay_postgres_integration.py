@@ -4,8 +4,8 @@ Telemetry relay against PostgreSQL (SRS FR-DAT-001, FR-DAT-003, FR-DAT-004, FR-D
 
 Skipped unless BIOSYNC_RELAY_ADMIN_URL is set to a PostgreSQL 15+ URL whose role may create
 databases, and the server is reachable. The module creates the database surgitwin_relay_test,
-applies 001-extensions, 002-schema, 003-triggers, and 006-telemetry-sessions, runs a relay
-session end to end, and drops surgitwin_relay_test at teardown. No other database is used.
+applies the shared migration list in dbsupport.MIGRATION_FILES, runs a relay session end to end,
+and drops surgitwin_relay_test at teardown. No other database is used.
 
 The admin URL holds credentials, so it is read from the environment and is never stored here.
 """
@@ -13,7 +13,6 @@ The admin URL holds credentials, so it is read from the environment and is never
 import asyncio
 import json
 import os
-import pathlib
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,16 +24,10 @@ from sqlalchemy.orm import sessionmaker
 from api.auth import create_access_token
 from api.main import create_app
 from api.relay_sink import SqlAlchemyRelaySink
+from dbsupport import apply_migrations
 
 RELAY_DB = "surgitwin_relay_test"
 ADMIN_URL = os.getenv("BIOSYNC_RELAY_ADMIN_URL", "")
-MIGRATIONS = pathlib.Path(__file__).resolve().parents[2] / "database" / "migrations"
-MIGRATION_FILES = [
-    "001-extensions.sql",
-    "002-schema.sql",
-    "003-triggers.sql",
-    "006-telemetry-sessions.sql",
-]
 
 
 def _frame(values, channel_code, unit):
@@ -83,9 +76,7 @@ def relay_db():
 
     engine = create_engine(make_url(ADMIN_URL).set(database=RELAY_DB), pool_pre_ping=True)
     try:
-        with engine.begin() as conn:
-            for name in MIGRATION_FILES:
-                conn.exec_driver_sql((MIGRATIONS / name).read_text(encoding="utf-8"))
+        apply_migrations(engine)
         yield engine
     finally:
         engine.dispose()

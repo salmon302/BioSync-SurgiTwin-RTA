@@ -130,7 +130,7 @@ this configuration. Its `ssl` setting is `off`. The DB-gated tests keep working 
 conftest sets `DB_SSLMODE=prefer`. Set `BIOSYNC_TEST_DATABASE_URL` to a plaintext URL and leave
 `DB_SSLMODE` unset in the shell, or keep the conftest default.
 
-To run the DB-gated tests against the TLS server, put the TLS options in the URL. Forward slashes
+To run the DB-gated tests against the TLS server, put the TLS options in `BIOSYNC_TEST_DATABASE_URL`. The DB-gated fixtures open engines from that URL only, so the client certificate must be in the URL. This URL is not used for `BIOSYNC_TLS_TEST_DATABASE_URL` (section 7). Forward slashes
 keep the paths valid in the URL on Windows:
 
 ```
@@ -149,6 +149,12 @@ named by `BIOSYNC_TLS_TEST_DATABASE_URL` and skip with a reason when the variabl
 * `test_tls_server_rejects_plaintext_connection` checks the no-encryption rejection message.
 
 Set `BIOSYNC_TLS_TEST_CERT_DIR` when the certificates are not in `database/certs/out/`.
+
+The live tests add the client certificate themselves, so `BIOSYNC_TLS_TEST_DATABASE_URL` carries only the server verification options. A URL with `sslcert` or `sslkey` would present a certificate in the no-certificate check and defeat it. Use this form:
+
+```
+BIOSYNC_TLS_TEST_DATABASE_URL=postgresql+psycopg2://surgitwin:PASSWORD@127.0.0.1:5433/surgitwin_tls_test?sslmode=verify-full&sslrootcert=I:/path/to/database/certs/out/ca.crt
+```
 
 The live tests need a server with the same entrypoint, `pg_hba.conf`, and certificate mounts as
 the compose service. The scratch server used for verification is started like this, with a

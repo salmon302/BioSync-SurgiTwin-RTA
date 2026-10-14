@@ -18,6 +18,10 @@ Acceptance:
 The module creates the disposable database surgitwin_audit_test and a login role with a random
 password. It drops both on exit. The password is not written to any file. Requires
 BIOSYNC_TEST_DATABASE_URL. Skipped with a reason when no database is reachable.
+
+Under client-certificate TLS the application login role cannot present a matching certificate, so
+the tests that use the application login role are skipped with a reason. The shared-account tests
+run under TLS.
 """
 
 import secrets
@@ -63,9 +67,19 @@ def session(audit_db):
     connection.close()
 
 
+TLS_ROLE_SKIP_REASON = (
+    "TLS server (clientcert=verify-full): the client certificate CN must equal the login role, and "
+    "database/certs/generate-certs.sh issues one client CN (PG_CLIENT_CN). A random login role cannot "
+    "present a matching certificate, so the application-role tests are skipped under TLS."
+)
+
+
 @pytest.fixture(scope="module")
 def app_engine(audit_db):
     """Engine that connects as a login role which is a member of surgitwin_app."""
+    with audit_db.connect() as conn:
+        if conn.execute(text("SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()")).scalar():
+            pytest.skip(TLS_ROLE_SKIP_REASON)
     role = f"surgitwin_app_login_{secrets.token_hex(4)}"
     password = secrets.token_hex(16)
     with audit_db.begin() as conn:

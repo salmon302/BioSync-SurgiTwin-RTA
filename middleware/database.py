@@ -159,6 +159,28 @@ def set_actor(session: Session, actor: str) -> None:
         _apply_actor(session, session.connection())
 
 
+SERVICE_ACTOR_PREFIX = "service:"
+
+
+def service_session(identity: str) -> Session:
+    """
+    Open a session for a background writer whose audited writes carry a service identity.
+
+    The identity names the writer, for example service:pulse-engine. It is set with set_actor, so
+    it follows the same per-transaction rule as a JWT subject. The caller closes the session.
+    Raises ValueError when identity does not start with SERVICE_ACTOR_PREFIX.
+    """
+    if not isinstance(identity, str) or not identity.startswith(SERVICE_ACTOR_PREFIX):
+        raise ValueError(f"service identity must start with {SERVICE_ACTOR_PREFIX!r}")
+    db = SessionLocal()
+    try:
+        set_actor(db, identity)
+    except ValueError:
+        db.close()
+        raise
+    return db
+
+
 @event.listens_for(Session, "after_begin")
 def _set_actor_on_begin(session: Session, transaction, connection) -> None:
     _apply_actor(session, connection)

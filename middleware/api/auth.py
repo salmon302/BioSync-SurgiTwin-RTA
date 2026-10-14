@@ -47,7 +47,7 @@ def _load_jwt_secret() -> str:
     Load the JWT signing secret from the environment.
 
     SRS NFR-S7: Secrets shall be injected via Docker secrets or environment
-    variables — never hard-coded. In production this MUST be set; we fail
+    variables, never hard-coded. In production this MUST be set; we fail
     closed (raise) when missing so a misconfigured deploy cannot silently
     fall back to an insecure default.
     """
@@ -68,7 +68,7 @@ def _load_jwt_secret() -> str:
     env = os.getenv("ENVIRONMENT", "production")
     if env == "development":
         logger.warning(
-            "JWT_SECRET not set — using insecure development default. "
+            "JWT_SECRET not set: using insecure development default. "
             "This MUST NOT be used in production (NFR-S7)."
         )
         return "dev-only-insecure-secret-change-me"
@@ -115,7 +115,7 @@ def authenticate_user(username: str, password: str) -> Optional["User"]:
         from database import SessionLocal
         from models import User as UserModel
     except ImportError:
-        logger.warning("Database models not importable — auth will use dev fallback")
+        logger.warning("Database models not importable, so auth will use dev fallback")
         return _dev_authenticate(username, password)
 
     try:

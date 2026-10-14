@@ -14,12 +14,16 @@ Canonical input rendering (must match the SQL function):
 - T_i is rendered as UTC with microseconds, e.g. 2026-10-13T22:34:45.123456Z.
 - D_prev and D_new are rendered as PostgreSQL jsonb::text. Object keys are ordered
   by length and then by bytes, with ", " and ": " separators. A missing D_prev is "{}".
+  D_new is NOT NULL in audit_log, so a JSON null in D_new is rendered as null.
+- Floats are rendered in plain decimal notation from their shortest repr, which matches
+  jsonb numeric output for values written in plain notation.
 - A missing actor_id or reason is the empty string.
 """
 
 import hashlib
 import json
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, List, Optional, Tuple
 import logging
 
@@ -43,8 +47,10 @@ def _jsonb_text(value: Any) -> str:
         return "null"
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return json.dumps(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return format(Decimal(repr(value)), "f")
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=False)
     if isinstance(value, dict):
@@ -86,7 +92,7 @@ def compute_hash(
         + _utc_text(occurred_at)
         + (actor_id or "")
         + ("{}" if data_prev is None else _jsonb_text(data_prev))
-        + ("{}" if data_new is None else _jsonb_text(data_new))
+        + _jsonb_text(data_new)
         + (reason or "")
     )
     return hashlib.sha256(concat_data.encode("utf-8")).hexdigest()

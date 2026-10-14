@@ -22,21 +22,21 @@
 CREATE OR REPLACE FUNCTION prevent_update()
 RETURNS TRIGGER AS $$
 BEGIN
-    RAISE EXCEPTION 'Table % is append-only. UPDATE operations are not permitted. Use INSERT for new records.', TG_TABLE_NAME;
+    RAISE EXCEPTION USING MESSAGE = 'Table ' || TG_TABLE_NAME || ' is append-only. UPDATE operations are not permitted. Use INSERT for new records.';
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION prevent_delete()
 RETURNS TRIGGER AS $$
 BEGIN
-    RAISE EXCEPTION 'Table % is append-only. DELETE operations are not permitted. Records cannot be removed.', TG_TABLE_NAME;
+    RAISE EXCEPTION USING MESSAGE = 'Table ' || TG_TABLE_NAME || ' is append-only. DELETE operations are not permitted. Records cannot be removed.';
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION prevent_truncate()
 RETURNS TRIGGER AS $$
 BEGIN
-    RAISE EXCEPTION 'Table % is append-only. TRUNCATE operations are not permitted.', TG_TABLE_NAME;
+    RAISE EXCEPTION USING MESSAGE = 'Table ' || TG_TABLE_NAME || ' is append-only. TRUNCATE operations are not permitted.';
 END;
 $$ LANGUAGE plpgsql;
 

@@ -1,14 +1,16 @@
 # Runtime dependencies for the SurgiTwin-RTA informatics tier.
 # Exact pins only (AGENTS.md section 6.2). Reconciled from the scaffold pins and the
 # BioSync-Gateway pins. Sources and reasons are in docs/migration-map.md.
-# Versions were not resolved against PyPI from this environment. Verify before the first
-# CI install on Python 3.11.
+# Every pin was checked against the PyPI JSON API on 2026-10-13 (exists, not yanked). Wheel
+# coverage is recorded in SNDEV/docs/impl-2026-10-13-pg15-qualification.md. Verify again on
+# Python 3.11 before the first CI install.
 
 # FastAPI and ASGI server
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 # uvloop: event-loop policy for the WebSocket relay (Gateway R3, NFR-PERF-002). loop_policy.py selects it.
-uvloop==0.19.0
+# uvloop has no Windows build. loop_policy.py falls back to the default event loop when it is absent.
+uvloop==0.19.0; sys_platform != "win32"
 
 # Database (synchronous psycopg2 driver, matching the migrated sessions)
 sqlalchemy==2.0.36
@@ -21,8 +23,11 @@ python-jose[cryptography]==3.5.0
 cryptography==49.0.0
 bcrypt==5.0.0
 
-# FHIR R4 (FR-DAT-007)
-fhir.resources==7.1.0
+# FHIR R4 (FR-DAT-007). fhir.resources 8.x provides the Pydantic v2 models that fhir_validator.py
+# calls with model_validate. 7.1.0 does not, and it failed FR-DAT-007 deep validation. fhir-core is
+# pinned because fhir.resources declares it as a floating dependency.
+fhir.resources==8.3.0
+fhir-core==1.1.11
 
 # Validation
 pydantic==2.10.3

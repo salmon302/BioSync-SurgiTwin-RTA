@@ -61,15 +61,19 @@ class TestIQ5PipCheck:
         if not os.path.exists(requirements_path):
             pytest.skip("requirements.txt not found")
         
-        # Parse required packages
+        # Parse required packages. Lines with an environment marker (for example uvloop on
+        # non-Windows platforms) are required only when the marker is true on this interpreter.
+        from packaging.requirements import Requirement
+        from packaging.utils import canonicalize_name
+
         with open(requirements_path, 'r') as f:
             required_packages = set()
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#') and not line.startswith('-'):
-                    # Extract package name (before any version specifier)
-                    pkg_name = line.split('==')[0].split('>=' )[0].split('<')[0].split('[')[0]
-                    required_packages.add(pkg_name.lower())
+                    req = Requirement(line)
+                    if req.marker is None or req.marker.evaluate():
+                        required_packages.add(canonicalize_name(req.name))
         
         if not required_packages:
             pytest.skip("No packages found in requirements.txt")
@@ -83,21 +87,12 @@ class TestIQ5PipCheck:
                 timeout=30
             )
             installed_packages = json.loads(result.stdout)
-            installed_names = {pkg['name'].lower() for pkg in installed_packages}
+            installed_names = {canonicalize_name(pkg['name']) for pkg in installed_packages}
         except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError):
             pytest.skip("Unable to query pip packages")
-        
-        # Check each required package is installed
-        missing = []
-        for req_pkg in required_packages:
-            # Handle packages with different naming (e.g., python-jose vs jose)
-            found = False
-            for inst_pkg in installed_names:
-                if req_pkg in inst_pkg or inst_pkg in req_pkg:
-                    found = True
-                    break
-            if not found:
-                missing.append(req_pkg)
+
+        # Check each required package is installed (PEP 503 names, so fhir-core matches fhir_core)
+        missing = sorted(req_pkg for req_pkg in required_packages if req_pkg not in installed_names)
         
         assert not missing, f"Required packages not installed: {', '.join(missing)}"
 

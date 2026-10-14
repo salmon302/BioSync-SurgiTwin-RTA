@@ -197,3 +197,28 @@ class SurgicalTelemetry(Base):
     filter_name = Column(String(50))
     filter_alpha = Column(Double)
     unit = Column(String(50), nullable=False)
+
+
+class TelemetrySession(Base):
+    """WebSocket telemetry relay session row, append-only (SRS FR-DAT-001, FR-DAT-003).
+
+    Each session writes an 'open' row at connect and a 'finalized' row at disconnect.
+    See database/migrations/006-telemetry-sessions.sql.
+    """
+    __tablename__ = "telemetry_sessions"
+
+    id = Column(BigInteger, primary_key=True)
+    session_uid = Column(String(36), nullable=False)
+    record_status = Column(String(20), nullable=False)
+    client_identity = Column(String(255), nullable=False)
+    connected_at = Column(DateTime(timezone=True), nullable=False)
+    disconnected_at = Column(DateTime(timezone=True))
+    points_relayed = Column(BigInteger, nullable=False, default=0)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "record_status IN ('open', 'finalized')",
+            name="telemetry_sessions_record_status_check",
+        ),
+    )

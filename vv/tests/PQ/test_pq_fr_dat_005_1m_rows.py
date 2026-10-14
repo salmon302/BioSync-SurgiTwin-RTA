@@ -13,7 +13,10 @@ Adaptations:
   * Column names follow the SurgiTwin audit_log (action, data_new, actor_id).
 
 Gated: runs only when BIOSYNC_PQ3_DATABASE_URL is set. Point it at a throwaway database only.
-Example:
+If BIOSYNC_PQ3_ADMIN_URL is also set, the test drops and recreates the database named in
+BIOSYNC_PQ3_DATABASE_URL before the run, so the audit_log is empty by construction. The admin URL
+must connect to the postgres maintenance database. Example:
+    BIOSYNC_PQ3_ADMIN_URL=postgresql://USER:PASSWORD@localhost:5432/postgres \
     BIOSYNC_PQ3_DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/surgitwin_pq3 \
         python -m pytest vv/tests/PQ/test_pq_fr_dat_005_1m_rows.py -v -s
 """
@@ -21,6 +24,7 @@ Example:
 import os
 import pathlib
 import time
+from urllib.parse import urlparse
 
 import pytest
 
@@ -32,6 +36,7 @@ HASH_CHECK_SQL = MIGRATIONS_DIR / "hash-chain-check.sql"
 ROWS = 1_000_000
 VERIFY_LIMIT_SECONDS = 60.0
 PQ3_DATABASE_URL = os.environ.get("BIOSYNC_PQ3_DATABASE_URL", "")
+PQ3_ADMIN_URL = os.environ.get("BIOSYNC_PQ3_ADMIN_URL", "")
 
 pytestmark = [pytest.mark.pq, pytest.mark.pq3, pytest.mark.db]
 
@@ -54,9 +59,26 @@ END $$;
     not PQ3_DATABASE_URL,
     reason="Set BIOSYNC_PQ3_DATABASE_URL to a dedicated PostgreSQL database to run PQ-3 (1M rows).",
 )
+def _recreate_database(admin_url: str, database_url: str) -> None:
+    import psycopg2
+    from psycopg2 import sql
+
+    name = urlparse(database_url).path.lstrip("/")
+    admin = psycopg2.connect(admin_url, connect_timeout=30)
+    admin.autocommit = True
+    try:
+        cur = admin.cursor()
+        cur.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name)))
+        cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    finally:
+        admin.close()
+
+
 def test_1m_rows_hash_chain_under_60s():
     import psycopg2
 
+    if PQ3_ADMIN_URL:
+        _recreate_database(PQ3_ADMIN_URL, PQ3_DATABASE_URL)
     conn = psycopg2.connect(PQ3_DATABASE_URL, connect_timeout=30)
     conn.autocommit = True
     try:

@@ -180,3 +180,16 @@ F7 (OPEN, record accuracy): the ledger `SNDEV/docs/impl-2026-10-13-gateway-migra
 * The compose init scripts run only on an empty `pgdata` volume. An existing volume keeps its schema and does not rerun 001 to 003.
 * The `postgres` container from this task is left running on `127.0.0.1:5432`. Its password is the local value set in the process environment and is not stored in any file.
 * `SNDEV/logs/` is gitignored by repository policy, so the run captures are referenced by path and are not committed.
+
+## Status Update 2026-10-14
+
+Findings F1, F2, F4, F5, and F6 changed state on 2026-10-14. F3 did not change. Each state below cites the commit that recorded it.
+
+* F1 (`middleware/api/auth.py` import defect): CLOSED at `654510b` (`fix(auth,relay): unblock suite imports`). The eight modules that failed collection now collect.
+* F2 (Python 3.11): CLOSED at `654510b`. Python 3.11.9 was already installed for the user. The venv `.venv-qual311` was created from it, and IQ-2 passes.
+* F6 (migration 006 `%` hazard): CLOSED at `654510b`. Migration 006 uses the `RAISE EXCEPTION USING MESSAGE` form, the same fix applied to 003 (defect 1).
+* F4 (JSON null in `data_prev`): CLOSED at `4d2a372`. The Python verifier reads `data_prev::text`, so SQL NULL and JSON null are distinct inputs. Source: `SNDEV/docs/impl-2026-10-14-hash-digest-equivalence.md`.
+* F5 (exponent notation and numbers with more than 17 significant digits): CLOSED at `4d2a372`. 77 JSON type vectors are equivalent in both data positions through JsonText canonicalization. The residual boundary is a caller that passes psycopg2-decoded Python values to the verifier. That boundary is enumerated in the same log.
+* F3 (tail deletion needs an external anchor): OPEN. Neither commit adds an anchor.
+
+The full suite at `4d2a372` reports 492 passed, 8 skipped, and 3 xfailed on `.venv-qual311` (Python 3.11.9). Gate G1.3 status is not changed by this section.

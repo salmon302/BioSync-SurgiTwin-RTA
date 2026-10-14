@@ -32,6 +32,7 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       BIOSYNC_TEST_DATABASE_URL: postgresql+psycopg2://surgitwin_test:ci-ephemeral-password@localhost:5432/surgitwin_test
+      BIOSYNC_RELAY_ADMIN_URL: postgresql+psycopg2://surgitwin_test:ci-ephemeral-password@localhost:5432/surgitwin_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,8 +40,10 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install -r middleware/requirements-test.txt
       # IQ-3, IQ-6, IQ-7, and the DB-backed OQ-7/8/9 and FR-DAT-005 cross-check run here.
+      # pgcrypto is created by database/migrations/001-extensions.sql when the fixtures apply it.
+      # BIOSYNC_RELAY_ADMIN_URL enables the relay PostgreSQL integration tests (migration 006).
       # PQ-3 (1,000,000 rows) is not run in CI. It needs BIOSYNC_PQ3_DATABASE_URL on a dedicated database.
-      - run: python -m pytest middleware/tests vv/tests -q -rs
+      - run: python -m pytest middleware/tests vv/tests -q
 
   cpp-build:
     runs-on: ubuntu-latest

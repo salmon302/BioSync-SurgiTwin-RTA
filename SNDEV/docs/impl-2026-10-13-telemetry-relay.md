@@ -120,3 +120,9 @@ The Author line in the metadata header should read `Author: Seth Nenninger (MiMo
 ## Provenance Confirmation
 
 The Author line in the metadata header records the producing agent model, Claude Haiku 5.5, and is kept as written. Two later agents self-reported the same model, so the line is accurate. The header timestamp `2026-10-14T00:34:40Z` is the real UTC time of authorship. This section confirms the header only. The "Provenance Correction" section above is kept as written.
+
+## Provenance Resolution
+
+The "Provenance Confirmation" section is the operative disposition for the Author line. SNDEV log headers name the model that produced the work, and three producing agents self-reported Claude Haiku 5.5 Agent, so the Author line stays as `Seth Nenninger (Claude Haiku 5.5 Agent)`.
+
+The "Provenance Correction" section asked for a MiMo-V2.6-Pro Agent Author line. That section is superseded by the Confirmation. It is retained only because log content is append-only. No other content in this file is changed by this section.

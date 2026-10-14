@@ -39,7 +39,7 @@ BEGIN
         SELECT 1 FROM telemetry_sessions
         WHERE session_uid = NEW.session_uid AND record_status = 'open'
     ) THEN
-        RAISE EXCEPTION 'Telemetry session % has no open record; finalization rejected', NEW.session_uid;
+        RAISE EXCEPTION USING MESSAGE = 'Telemetry session ' || NEW.session_uid::text || ' has no open record; finalization rejected';
     END IF;
     RETURN NEW;
 END;

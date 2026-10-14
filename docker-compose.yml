@@ -21,11 +21,12 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Init source: the append-only schema, applied in order on first start. The nightly
+      # Init source: the append-only schema, applied in lexical order on first start. The nightly
       # hash-chain-check.sql is a read-only report and is not mounted here.
       - ./database/migrations/001-extensions.sql:/docker-entrypoint-initdb.d/001-extensions.sql:ro
       - ./database/migrations/002-schema.sql:/docker-entrypoint-initdb.d/002-schema.sql:ro
       - ./database/migrations/003-triggers.sql:/docker-entrypoint-initdb.d/003-triggers.sql:ro
+      - ./database/migrations/006-telemetry-sessions.sql:/docker-entrypoint-initdb.d/006-telemetry-sessions.sql:ro
 
   middleware:
     build:

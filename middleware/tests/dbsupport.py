@@ -24,7 +24,7 @@ TEST_DATABASE_URL = os.getenv("BIOSYNC_TEST_DATABASE_URL", "")
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = REPO_ROOT / "database" / "migrations"
-MIGRATION_FILES = ["001-extensions.sql", "002-schema.sql", "003-triggers.sql"]
+MIGRATION_FILES = ["001-extensions.sql", "002-schema.sql", "003-triggers.sql", "006-telemetry-sessions.sql"]
 
 
 def apply_migrations(engine) -> None:

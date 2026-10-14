@@ -24,6 +24,7 @@ os.environ.setdefault("DB_SSLMODE", "prefer")
 
 import pytest  # noqa: E402
 
+from database import get_db  # noqa: E402
 from dbsupport import db_engine, db_session  # noqa: E402,F401
 
 
@@ -39,7 +40,6 @@ def client(db_session):
     from fastapi.testclient import TestClient
 
     from api.main import app
-    from database import get_db
 
     def override_get_db():
         yield db_session

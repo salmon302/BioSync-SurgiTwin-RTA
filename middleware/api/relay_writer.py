@@ -15,6 +15,13 @@ Backpressure:
   * Lifecycle records (session open and finalize) wait for queue space through put_lifecycle().
     The wait suspends only the calling coroutine.
 
+Session lifecycle:
+  * A session is tracked from track_session() until its finalized row is queued. The finalized
+    row carries the points relayed so far.
+  * stop() finalizes every session still open before it closes intake. A session whose open row
+    is still waiting for queue space is finalized as soon as that row is queued, so the open row
+    always precedes the finalized row.
+
 Batches are written with one sink call each. A sink call is expected to commit its batch in one
 transaction, so a retried batch cannot be partly applied.
 """
@@ -26,8 +33,8 @@ import contextlib
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional, Protocol, Sequence, Union
+from datetime import datetime, timezone
+from typing import Dict, Optional, Protocol, Sequence, Union
 
 from api.middleware.response_time import record_ingestion_rate
 
@@ -71,6 +78,19 @@ class SessionRecord:
     points_relayed: int
 
 
+@dataclass(eq=False)
+class SessionTracker:
+    """One relay session between track_session() and the queuing of its finalized row."""
+
+    session_uid: str
+    client_identity: str
+    connected_at: datetime
+    points: int = 0
+    queued: bool = False
+    close_requested: bool = False
+    closed: bool = False
+
+
 RelayRecord = Union[SampleRecord, SessionRecord]
 
 
@@ -104,6 +124,7 @@ class RelayWriter:
         self._queue: Optional[asyncio.Queue] = None
         self._task: Optional[asyncio.Task] = None
         self._accepting = False
+        self._sessions: Dict[str, SessionTracker] = {}
         self.accepted_samples = 0
         self.rejected_samples = 0
         self.persisted_records = 0
@@ -137,13 +158,14 @@ class RelayWriter:
         self._task = asyncio.create_task(self._run(), name=WRITER_TASK_NAME)
 
     async def stop(self) -> None:
-        """Stop intake, drain the queue for up to drain_timeout_s, then cancel the writer task."""
+        """Finalize open sessions, stop intake, drain the queue for up to drain_timeout_s, then cancel the writer task."""
         if self._task is None:
             return
+        await self.finalize_open_sessions()
         self._accepting = False
         try:
             await asyncio.wait_for(self._queue.join(), timeout=self._drain_timeout_s)
-        except TimeoutError:
+        except asyncio.TimeoutError:
             self.abandoned_records += self.queue_depth
             logger.error(
                 "Relay drain timed out after %.1fs with %d records queued",
@@ -186,6 +208,62 @@ class RelayWriter:
             return False
         await self._queue.put(record)
         return True
+
+    def track_session(self, session_uid: str, client_identity: str, connected_at: datetime) -> SessionTracker:
+        """Register a session before its open row is queued. The caller adds to tracker.points."""
+        tracker = SessionTracker(
+            session_uid=session_uid,
+            client_identity=client_identity,
+            connected_at=connected_at,
+        )
+        self._sessions[session_uid] = tracker
+        return tracker
+
+    async def open_session(self, tracker: SessionTracker) -> bool:
+        """Queue the open row. Returns False when intake is stopped."""
+        queued = await self.put_lifecycle(SessionRecord(
+            session_uid=tracker.session_uid,
+            record_status="open",
+            client_identity=tracker.client_identity,
+            connected_at=tracker.connected_at,
+            disconnected_at=None,
+            points_relayed=0,
+        ))
+        if not queued:
+            self._sessions.pop(tracker.session_uid, None)
+            tracker.closed = True
+            return False
+        tracker.queued = True
+        if tracker.close_requested:
+            await self.close_session(tracker)
+        return True
+
+    async def close_session(self, tracker: SessionTracker) -> None:
+        """Queue the finalized row with the points relayed so far. Idempotent."""
+        if tracker.closed:
+            return
+        if not tracker.queued:
+            tracker.close_requested = True
+            return
+        tracker.closed = True
+        self._sessions.pop(tracker.session_uid, None)
+        await self.put_lifecycle(SessionRecord(
+            session_uid=tracker.session_uid,
+            record_status="finalized",
+            client_identity=tracker.client_identity,
+            connected_at=tracker.connected_at,
+            disconnected_at=datetime.now(timezone.utc),
+            points_relayed=tracker.points,
+        ))
+
+    async def finalize_open_sessions(self) -> int:
+        """Queue a finalized row for every tracked session that is still open. Returns the count."""
+        pending = [tracker for tracker in self._sessions.values() if not tracker.closed]
+        for tracker in pending:
+            await self.close_session(tracker)
+        if pending:
+            logger.info("Relay shutdown finalizing %d open sessions", len(pending))
+        return len(pending)
 
     def snapshot(self) -> dict:
         return {

@@ -10,6 +10,8 @@ session end to end, and drops surgitwin_relay_test at teardown. No other databas
 The admin URL holds credentials, so it is read from the environment and is never stored here.
 """
 
+import asyncio
+import json
 import os
 import pathlib
 
@@ -153,6 +155,64 @@ def test_finalized_row_without_open_row_is_rejected(relay_db):
         "disconnected_at, points_relayed) VALUES (gen_random_uuid(), 'finalized', 'orphan', now(), now(), 0)",
         "no open record",
     )
+
+
+def test_shutdown_finalizes_a_connected_session_in_postgresql(relay_db):
+    """The lifespan exits while the WebSocket is open. The session gets its finalized row during shutdown."""
+    app = create_app(relay_sink=SqlAlchemyRelaySink(session_factory=sessionmaker(bind=relay_db)))
+    token = create_access_token(
+        {"sub": "pq-shutdown", "role": "clinician", "scopes": ["telemetry_read", "telemetry_write"]},
+        expires_delta=1,
+    )
+    scope = {
+        "type": "websocket",
+        "asgi": {"version": "3.0"},
+        "app": app,
+        "scheme": "ws",
+        "path": "/api/telemetry/stream",
+        "raw_path": b"/api/telemetry/stream",
+        "root_path": "",
+        "query_string": f"token={token}".encode(),
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 50000),
+        "subprotocols": [],
+    }
+
+    async def scenario():
+        inbox: asyncio.Queue = asyncio.Queue()
+        outbox: asyncio.Queue = asyncio.Queue()
+
+        async def receive():
+            return await inbox.get()
+
+        async def send(message):
+            await outbox.put(message)
+
+        async with app.router.lifespan_context(app):
+            await inbox.put({"type": "websocket.connect"})
+            connection = asyncio.create_task(app(scope, receive, send))
+            assert (await outbox.get())["type"] == "websocket.accept"
+            await inbox.put({
+                "type": "websocket.receive",
+                "text": json.dumps(_frame([70.0, 71.0], "8867-4", "beats/min")),
+            })
+            assert (await outbox.get())["type"] == "websocket.send"
+        connection.cancel()
+        await asyncio.gather(connection, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+    with relay_db.connect() as conn:
+        sessions = conn.execute(text(
+            "SELECT record_status, client_identity, points_relayed FROM telemetry_sessions "
+            "WHERE client_identity = 'pq-shutdown' ORDER BY id"
+        )).all()
+        assert [tuple(row) for row in sessions] == [
+            ("open", "pq-shutdown", 0),
+            ("finalized", "pq-shutdown", 2),
+        ]
+        assert conn.execute(text("SELECT integrity_status FROM verify_hash_chain()")).scalar() == "ok"
 
 
 def test_second_open_row_for_one_session_is_rejected(relay_db):

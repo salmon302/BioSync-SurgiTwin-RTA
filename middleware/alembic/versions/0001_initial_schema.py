@@ -26,6 +26,7 @@ SQL_FILES = [
     "001-extensions.sql",
     "002-schema.sql",
     "003-triggers.sql",
+    "006-telemetry-sessions.sql",
 ]
 
 

@@ -219,6 +219,126 @@ def test_http_ingest_rejects_unscoped_token():
     assert response.status_code == 403
 
 
+def test_shutdown_finalizes_a_session_still_connected_with_points_as_of_shutdown():
+    """The lifespan exits while the WebSocket is open. TestClient cannot model that, so this drives the ASGI app."""
+    sink = RecordingSink()
+    app = create_app(relay_sink=sink)
+    token = _token(["telemetry_read", "telemetry_write"], sub="operator-shutdown")
+    scope = {
+        "type": "websocket",
+        "asgi": {"version": "3.0"},
+        "app": app,
+        "scheme": "ws",
+        "path": "/api/telemetry/stream",
+        "raw_path": b"/api/telemetry/stream",
+        "root_path": "",
+        "query_string": f"token={token}".encode(),
+        "headers": [],
+        "server": ("testserver", 80),
+        "client": ("127.0.0.1", 50000),
+        "subprotocols": [],
+    }
+
+    async def scenario():
+        inbox: asyncio.Queue = asyncio.Queue()
+        outbox: asyncio.Queue = asyncio.Queue()
+
+        async def receive():
+            return await inbox.get()
+
+        async def send(message):
+            await outbox.put(message)
+
+        async with app.router.lifespan_context(app):
+            await inbox.put({"type": "websocket.connect"})
+            connection = asyncio.create_task(app(scope, receive, send))
+            assert (await outbox.get())["type"] == "websocket.accept"
+            await inbox.put({"type": "websocket.receive", "text": json.dumps(_telemetry_frame([70.0, 71.0]))})
+            assert (await outbox.get())["type"] == "websocket.send"
+        connection.cancel()
+        await asyncio.gather(connection, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+    sessions = _sessions(sink)
+    assert [s.record_status for s in sessions] == ["open", "finalized"]
+    opened, finalized = sessions
+    assert opened.client_identity == finalized.client_identity == "operator-shutdown"
+    assert finalized.points_relayed == 2
+    assert finalized.disconnected_at is not None
+
+
+def test_writer_stop_finalizes_tracked_sessions_once():
+    sink = RecordingSink()
+    now = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
+    still_open = "44444444-4444-4444-4444-444444444444"
+    already_closed = "55555555-5555-5555-5555-555555555555"
+
+    async def scenario():
+        writer = RelayWriter(sink)
+        writer.start()
+        open_tracker = writer.track_session(still_open, "shutdown-user", now)
+        assert await writer.open_session(open_tracker)
+        open_tracker.points = 4
+        closed_tracker = writer.track_session(already_closed, "closed-user", now)
+        assert await writer.open_session(closed_tracker)
+        await writer.close_session(closed_tracker)
+        await writer.stop()
+        await writer.close_session(open_tracker)
+
+    asyncio.run(scenario())
+
+    by_uid = {}
+    for record in _sessions(sink):
+        by_uid.setdefault(record.session_uid, []).append(record)
+    assert [r.record_status for r in by_uid[still_open]] == ["open", "finalized"]
+    assert by_uid[still_open][1].points_relayed == 4
+    assert [r.record_status for r in by_uid[already_closed]] == ["open", "finalized"]
+
+
+def test_finalized_row_waits_behind_an_open_row_that_is_still_queueing():
+    class GatedSink(RecordingSink):
+        def __init__(self):
+            super().__init__()
+            self.gate = asyncio.Event()
+
+        async def write_batch(self, batch):
+            await self.gate.wait()
+            await super().write_batch(batch)
+
+    sink = GatedSink()
+    now = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
+    queued_uid = "66666666-6666-6666-6666-666666666666"
+    filler = "77777777-7777-7777-7777-777777777777"
+
+    def record(uid, status, disconnected=None):
+        return SessionRecord(
+            session_uid=uid, record_status=status, client_identity="filler",
+            connected_at=now, disconnected_at=disconnected, points_relayed=0,
+        )
+
+    async def scenario():
+        writer = RelayWriter(sink, maxsize=1)
+        writer.start()
+        assert await writer.put_lifecycle(record(filler, "open"))
+        await asyncio.sleep(0)
+        assert await writer.put_lifecycle(record(filler, "finalized", now))
+        tracker = writer.track_session(queued_uid, "waiting-user", now)
+        pending = asyncio.create_task(writer.open_session(tracker))
+        await asyncio.sleep(0)
+        assert not tracker.queued
+        await writer.finalize_open_sessions()
+        assert tracker.close_requested and not tracker.closed
+        sink.gate.set()
+        assert await pending is True
+        await writer.stop()
+
+    asyncio.run(scenario())
+
+    statuses = [r.record_status for r in _sessions(sink) if r.session_uid == queued_uid]
+    assert statuses == ["open", "finalized"]
+
+
 class _AuditFakeSession:
     def __init__(self, statements):
         self._statements = statements

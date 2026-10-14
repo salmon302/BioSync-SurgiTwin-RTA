@@ -44,7 +44,6 @@ from api.relay_writer import (
     OFFER_ACCEPTED,
     RelayWriter,
     SampleRecord,
-    SessionRecord,
 )
 from api.routes.telemetry_generator import TelemetryGenerator
 from engine.signal import MultiChannelEMAFilter
@@ -344,22 +343,11 @@ async def telemetry_stream(websocket: WebSocket, token: Optional[str] = None):
 
     await relay.manager.connect(websocket)
 
-    session_uid = str(uuid4())
-    connected_at = _utc_now()
-    points = 0
-    opened = False
+    tracker = relay.writer.track_session(str(uuid4()), client_identity, _utc_now())
     try:
-        if not await relay.writer.put_lifecycle(SessionRecord(
-            session_uid=session_uid,
-            record_status="open",
-            client_identity=client_identity,
-            connected_at=connected_at,
-            disconnected_at=None,
-            points_relayed=0,
-        )):
+        if not await relay.writer.open_session(tracker):
             await websocket.close(code=1013, reason="Relay writer unavailable")
             return
-        opened = True
 
         while True:
             try:
@@ -367,6 +355,8 @@ async def telemetry_stream(websocket: WebSocket, token: Optional[str] = None):
             except json.JSONDecodeError:
                 await websocket.send_json(_error_frame("invalid_json", "Frame is not valid JSON"))
                 continue
+            if tracker.closed:
+                break
 
             if not isinstance(data, dict):
                 await websocket.send_json(_error_frame("invalid_frame", "Frame must be a JSON object"))
@@ -385,14 +375,14 @@ async def telemetry_stream(websocket: WebSocket, token: Optional[str] = None):
                 if not can_publish:
                     await websocket.send_json(_error_frame("forbidden", "telemetry_write scope required"))
                     continue
-                result = relay.ingest(data.get("payload"), default_run_key=f"relay:{session_uid}")
+                result = relay.ingest(data.get("payload"), default_run_key=f"relay:{tracker.session_uid}")
                 if result.status == INGEST_INVALID:
                     await websocket.send_json(_error_frame("invalid_payload", result.reason))
                     continue
                 if result.status == INGEST_REJECTED:
                     await websocket.send_json(_error_frame("backpressure", f"Relay queue unavailable ({result.reason})"))
                     continue
-                points += result.points
+                tracker.points += result.points
                 await relay.broadcast(result.message)
             else:
                 await websocket.send_json(_error_frame("unsupported_type", "Unknown frame type"))
@@ -402,15 +392,7 @@ async def telemetry_stream(websocket: WebSocket, token: Optional[str] = None):
         logger.error("WebSocket error: %s", exc)
     finally:
         relay.manager.disconnect(websocket)
-        if opened:
-            await relay.writer.put_lifecycle(SessionRecord(
-                session_uid=session_uid,
-                record_status="finalized",
-                client_identity=client_identity,
-                connected_at=connected_at,
-                disconnected_at=_utc_now(),
-                points_relayed=points,
-            ))
+        await relay.writer.close_session(tracker)
 
 
 @router.post("/ingest", status_code=202)

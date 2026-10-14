@@ -81,7 +81,7 @@ def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-def authenticate_user(username: str, password: str) -> Optional[User]:
+def authenticate_user(username: str, password: str) -> Optional["User"]:
     """
     Authenticate a user against the database (SRS FR-3.8.5).
 
@@ -125,7 +125,7 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
             pass
 
 
-def _dev_authenticate(username: str, password: str) -> Optional[User]:
+def _dev_authenticate(username: str, password: str) -> Optional["User"]:
     """
     Development-only authentication fallback.
 
@@ -241,9 +241,9 @@ def create_access_token(data: dict, expires_delta: Optional[int] = None) -> str:
     Returns:
         Encoded JWT token string
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    issued_at = datetime.utcnow()
+    issued_at = datetime.now(timezone.utc)
     to_encode = data.copy()
     to_encode["jti"] = str(uuid4())
 
@@ -273,10 +273,10 @@ def create_refresh_token(data: dict) -> str:
     Returns:
         Encoded JWT refresh token string
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     
     to_encode = data.copy()
-    issued_at = datetime.utcnow()
+    issued_at = datetime.now(timezone.utc)
     to_encode.update({
         "iat": issued_at,
         "exp": issued_at + timedelta(days=JWT_REFRESH_EXPIRATION_DAYS),

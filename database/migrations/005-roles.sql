@@ -7,6 +7,8 @@
 -- (the grants name telemetry_sessions). Apply order: 001, 002, 003, 004, 006, 005.
 -- Creating roles and transferring ownership need CREATEROLE and superuser or surgitwin_owner membership.
 -- Idempotent.
+-- Note: the users_username_individual denylist includes 'admin'. A database that already has a user
+--   named admin cannot apply this file until that account is renamed, because the CHECK validates rows.
 --
 -- Roles (cluster-wide):
 --   surgitwin_owner: NOLOGIN. Owns every table and sequence in schema public. Migrations run as a member.

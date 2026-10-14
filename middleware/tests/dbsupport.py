@@ -6,6 +6,13 @@ Set BIOSYNC_TEST_DATABASE_URL to a disposable PostgreSQL 15+ database. When it i
 unreachable, the fixtures skip the dependent test with a reason. A DB-dependent test is never
 reported as passed without database evidence.
 
+TLS identity rule (NFR-SEC-001). When the server enforces clientcert=verify-full, the client
+certificate CN must equal the login role. The shared fixtures use one login identity, the user in
+BIOSYNC_TEST_DATABASE_URL, and that identity is the CN of the client certificate that
+database/certs/generate-certs.sh issues (PG_CLIENT_CN, default surgitwin). The fixtures in this file
+never create login roles, so they never present a certificate with a different CN. A test that needs
+a second login identity must issue its own certificate through the same tooling for that CN.
+
 Origin: BioSync-Gateway tests/conftest.py fixture pattern (db_engine, db_session), adapted
 to the SQL migrations. The Gateway created tables with Base.metadata.create_all(), which
 skips the append-only triggers and the hash chain. Migrations are applied here instead.

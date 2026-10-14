@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: MIT
+#
+# Isolated verification override (SNDEV/docs/impl-2026-10-14-init-tls-verify.md). It moves the
+# postgres publish to 127.0.0.1:5434 so a verification project runs beside the shared 5432 container.
+# Use an isolated project name, so the volumes and containers do not match the shared stack:
+#
+#   docker compose -p srta-verify -f docker-compose.yml -f docker-compose.verify-override.yml up -d postgres
+#   docker compose -p srta-verify -f docker-compose.yml -f docker-compose.verify-override.yml down -v
+#
+# "!override" replaces the publish list from docker-compose.yml instead of appending to it.
+
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:5434:5432"

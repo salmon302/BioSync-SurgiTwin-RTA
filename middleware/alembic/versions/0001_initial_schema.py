@@ -22,11 +22,14 @@ depends_on = None
 MIGRATIONS_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "database", "migrations")
 )
+# Apply order is explicit. 005 grants on telemetry_sessions, which 006 creates, so 005 is last.
 SQL_FILES = [
     "001-extensions.sql",
     "002-schema.sql",
     "003-triggers.sql",
+    "004-audit-capture.sql",
     "006-telemetry-sessions.sql",
+    "005-roles.sql",
 ]
 
 

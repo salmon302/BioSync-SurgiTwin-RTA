@@ -35,12 +35,17 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Init source: the append-only schema, applied in lexical order on first start. The nightly
-      # hash-chain-check.sql is a read-only report and is not mounted here.
+      # Init source: the append-only schema, applied on first start. The entrypoint runs the mount
+      # targets in lexical order, so the target names set the apply order to 001, 002, 003, 004,
+      # 006, 005. The source names of 005 and 006 are swapped in the targets on purpose: 005 grants
+      # on telemetry_sessions, which 006 creates, and plain lexical order of the source names would
+      # run 005 first. The nightly hash-chain-check.sql is a read-only report and is not mounted.
       - ./database/migrations/001-extensions.sql:/docker-entrypoint-initdb.d/001-extensions.sql:ro
       - ./database/migrations/002-schema.sql:/docker-entrypoint-initdb.d/002-schema.sql:ro
       - ./database/migrations/003-triggers.sql:/docker-entrypoint-initdb.d/003-triggers.sql:ro
-      - ./database/migrations/006-telemetry-sessions.sql:/docker-entrypoint-initdb.d/006-telemetry-sessions.sql:ro
+      - ./database/migrations/004-audit-capture.sql:/docker-entrypoint-initdb.d/004-audit-capture.sql:ro
+      - ./database/migrations/006-telemetry-sessions.sql:/docker-entrypoint-initdb.d/005-telemetry-sessions.sql:ro
+      - ./database/migrations/005-roles.sql:/docker-entrypoint-initdb.d/006-roles.sql:ro
       # TLS material. The CA private key (ca.key) is never mounted into a container.
       - ./database/certs/postgres-entrypoint.sh:/opt/biosync/postgres-entrypoint.sh:ro
       - ./database/postgres/pg_hba.conf:/opt/biosync/pg_hba.conf:ro

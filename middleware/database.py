@@ -33,18 +33,19 @@ if not DATABASE_URL:
         )
     DATABASE_URL = "postgresql+psycopg2://localhost:5432/surgitwin"
 
-# TLS/SSL configuration for secure database connections
-# Implements SRS NFR-SEC-001 (TLS) and the client-certificate intent of NFR-SEC-001.
+# TLS/SSL configuration for secure database connections (SRS NFR-SEC-001, Gateway R2).
 #
-# Default sslmode is environment-aware:
-#   * ENVIRONMENT=production  -> "verify-full" (mutual-TLS intent). Fail-closed.
-#   * any other value         -> "prefer" so local and CI stacks without a PKI still connect.
-# Server-side enforcement (pg_hba hostssl clientcert=verify-full) is NOT migrated.
-# Gateway R2 is carried as open debt (see docs/migration-map.md).
-DB_SSLMODE = os.getenv(
-    "DB_SSLMODE",
-    "verify-full" if _ENVIRONMENT == "production" else "prefer",
-)
+# DB_SSLMODE defaults to "verify-full" in every environment, so an unset or empty value fails
+# closed. The server certificate must chain to DB_SSLROOTCERT and carry the host name used in
+# DATABASE_URL, and the middleware presents DB_SSLCERT and DB_SSLKEY. A weaker mode is used only
+# when it is set explicitly (for example, test runs set DB_SSLMODE=prefer in conftest.py).
+# Server-side enforcement is pg_hba.conf hostssl clientcert=verify-full (database/postgres/).
+DB_SSL_MODES = ("disable", "allow", "prefer", "require", "verify-ca", "verify-full")
+DB_SSLMODE = os.getenv("DB_SSLMODE") or "verify-full"
+if DB_SSLMODE not in DB_SSL_MODES:
+    raise RuntimeError(
+        f"DB_SSLMODE={DB_SSLMODE!r} is not a libpq sslmode (NFR-SEC-001)."
+    )
 DB_SSLROOTCERT = os.getenv("DB_SSLROOTCERT")  # Path to CA certificate
 DB_SSLCERT = os.getenv("DB_SSLCERT")  # Path to client certificate
 DB_SSLKEY = os.getenv("DB_SSLKEY")  # Path to client key
@@ -65,16 +66,15 @@ elif _ENVIRONMENT == "production":
         "are not using mutual-TLS (NFR-SEC-001).", DB_SSLMODE,
     )
 
-# Build connection arguments for SSL/TLS
-connect_args = {}
-if DB_SSLMODE in ("require", "verify-ca", "verify-full"):
-    connect_args["sslmode"] = DB_SSLMODE
-    if DB_SSLROOTCERT:
-        connect_args["sslrootcert"] = DB_SSLROOTCERT
-    if DB_SSLCERT:
-        connect_args["sslcert"] = DB_SSLCERT
-    if DB_SSLKEY:
-        connect_args["sslkey"] = DB_SSLKEY
+# The sslmode is always passed to libpq. libpq otherwise defaults to "prefer", which would
+# silently ignore an explicit "disable".
+connect_args = {"sslmode": DB_SSLMODE}
+if DB_SSLROOTCERT:
+    connect_args["sslrootcert"] = DB_SSLROOTCERT
+if DB_SSLCERT:
+    connect_args["sslcert"] = DB_SSLCERT
+if DB_SSLKEY:
+    connect_args["sslkey"] = DB_SSLKEY
 
 # Reconnection settings (SRS NFR-R3: exponential backoff)
 DB_RECONNECT_MAX_ATTEMPTS = int(os.getenv("DB_RECONNECT_MAX_ATTEMPTS", "5"))

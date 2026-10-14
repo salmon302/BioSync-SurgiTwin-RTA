@@ -1,0 +1,2 @@
+# The entrypoint wrappers run under sh inside containers, so they keep LF line endings on Windows checkouts.
+*.sh text eol=lf

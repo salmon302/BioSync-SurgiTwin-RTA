@@ -1,0 +1,2 @@
+# Generated certificate material and private keys. Never commit anything in out/.
+out/

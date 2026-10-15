@@ -129,7 +129,7 @@ Deferred (not dropped):
 | Gateway defect: in-place updates to an append-only `simulations` table | FR-MS-006 | DONE | Append-only state rows. |
 | Gateway load and soak CI workflow (`pq.yml`) | NFR-PERF-001, NFR-REL-001 | OPEN | Not migrated. The SurgiTwin qualification job runs the IQ, OQ, and PQ suites against PostgreSQL. The 1,000,000-row check needs `BIOSYNC_PQ3_DATABASE_URL` and is not run in CI. |
 | Pins not resolved against PyPI | Requirements | CLOSED (`ffcf167`, suite verified at `654510b`) | All 15 runtime and test pins resolved on PyPI (fhir.resources 8.3.0 and fhir-core 1.1.11 pinned, uvloop platform-conditional). The suite is green under the pinned `.venv-qual311` (Python 3.11.9) at `654510b`. Source: `SNDEV/docs/impl-2026-10-13-pg15-qualification.md`, and `SNDEV/docs/impl-2026-10-14-unblock-integration.md`. |
-| Pulse engine source provenance and build | FR-MS-006 | OPEN | `.pulse/` is an external prerequisite. The Pulse image was not built in this migration. |
+| Pulse engine source provenance and build | FR-MS-006 | CLOSED (2026-10-14) | `.pulse/` copied from Gateway HEAD `babc6323baa9738b8838df754cff4aba63b3ee91`, tag `REL_4_3_2` (version 4.3.2 per `.pulse/CMakeLists.txt`); image `biosync-pulse` built from `middleware/Dockerfile.pulse` with `import pulse OK`; provenance recorded in `sim/SOUP.md` and in the Table 1 `.pulse/` row. |
 | Docker image for `Dockerfile.pulse` runs as root | NFR-SEC-001 | OPEN | Gateway image had no non-root user. Not changed in this phase. |
 | Data retention periods for surgical telemetry and simulation runs | SRS Section 6 (Gateway section 6.3 analogue) | OPEN | The Gateway retention periods are not restated in this repository. No purge job exists, and the WORM triggers block row deletion. |
 

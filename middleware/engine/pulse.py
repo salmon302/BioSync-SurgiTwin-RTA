@@ -37,6 +37,7 @@ import asyncio
 import base64
 import bisect
 import dataclasses
+import gc
 import hashlib
 import json
 import logging
@@ -78,6 +79,16 @@ HEARTBEAT_INTERVAL_S = 0.010
 HEARTBEAT_BOUND_MS = 50.0
 HEARTBEAT_WINDOW = 200_000
 HEARTBEAT_BUCKET_EDGES_MS = (10.0, 20.0, 50.0, 100.0, 250.0)
+
+# Bound on the per-simulation metric history. Consumers read only the latest entry
+# (``[-1]``) or a small length in tests, so an unbounded list buys nothing and costs
+# generation-2 GC time: every long-lived SimulationMetrics object must be scanned on
+# each gen-2 pass, so the pause grows with run length. Measured on the 600 s FR-MS-006
+# run: gen-2 passes of 37 ms at 44 s and 219 ms at 555 s with the unbounded list, both
+# showing up as heartbeat gaps above the 50 ms bound. 2000 entries per simulation caps
+# the steady-state history objects at 20k (about 7 ms of gen-2 scan at the measured
+# 0.36 us per entry-pair rate).
+METRICS_HISTORY_MAX = 2000
 
 
 class SimulationState(Enum):
@@ -410,11 +421,13 @@ class PulseWorker:
         self.worker_pid: Optional[int] = None
         self.start_time: Optional[float] = None
         self.paused_at: Optional[float] = None
-        self.metrics_history: List[SimulationMetrics] = []
+        self.metrics_history: Deque[SimulationMetrics] = deque(maxlen=METRICS_HISTORY_MAX)
         self._executor_factory = executor_factory or _default_executor
         self._executor: Optional[Executor] = None
         self._init_timeout_s = init_timeout_s
         self._step_timeout_s = step_timeout_s
+        # Warm the metrics-hook import off-loop (FR-MS-006; see _warm_metrics_hook).
+        _warm_metrics_hook()
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -736,6 +749,54 @@ _heartbeat = HeartbeatMonitor()
 def heartbeat_monitor() -> HeartbeatMonitor:
     """Return the process-wide heartbeat monitor."""
     return _heartbeat
+
+
+def _warm_metrics_hook() -> None:
+    """
+    Import the NFR-P5 metrics hook at construction time, not at the first step.
+
+    ``PulseWorker._record_step`` imports ``api.middleware.response_time``
+    lazily. The first import costs tens of milliseconds of CPU on the calling
+    thread. When that first step completes on the event loop, the cost lands on
+    the loop and shows up as a heartbeat gap above the 50 ms FR-MS-006 bound
+    (measured: 48 ms in-process, 111 ms cold import). ``PulseWorker.__init__``
+    runs before any measurement window starts, so warming the import here keeps
+    the per-step cost in ``_record_step`` to a ``sys.modules`` lookup.
+    Import failures are reported by ``_record_step`` as they were before.
+    """
+    try:
+        import api.middleware.response_time  # noqa: F401
+    except (ImportError, AttributeError):
+        pass
+
+
+_GC_FROZEN = False
+
+
+def _freeze_gc_once() -> None:
+    """
+    Permanently untrack the objects that exist before the first manager starts.
+
+    ``gc.freeze()`` moves every currently tracked object out of the generational
+    collector, so generation-2 passes scan only objects created at runtime. The
+    runtime set is bounded by ``METRICS_HISTORY_MAX``; the pre-existing set is
+    import-time state (module graphs, codecaches, the warmed metrics hook) that
+    lives for the whole process and would otherwise be rescanned on every gen-2
+    pass. The 600 s FR-MS-006 baseline measured a gen-2 floor of roughly 20 ms
+    on top of the history-driven cost; freezing removes that floor from the
+    loop-visible pause. Runs once per process; later managers keep their
+    worker objects collectable. Import failures and old interpreters without
+    ``gc.freeze`` leave collection behavior unchanged.
+    """
+    global _GC_FROZEN
+    if _GC_FROZEN:
+        return
+    _GC_FROZEN = True
+    try:
+        gc.collect()
+        gc.freeze()
+    except (AttributeError, RuntimeError):  # pragma: no cover - gc.freeze is standard 3.7+
+        pass
 
 
 class SimulationManager:

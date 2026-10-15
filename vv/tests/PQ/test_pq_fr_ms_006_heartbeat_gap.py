@@ -17,10 +17,13 @@ Captures: when the real-engine test runs, the result is written to
 Skips and verification scope:
   * ``test_pq_fr_ms_006_heartbeat_gap_real_engine`` requires the native Pulse bindings. It is
     skipped on hosts without the ``pulse`` package, and that skip is the recorded status until
-    the pinned Pulse build is available (task 2.6).
-  * ``test_harness_self_check_with_stub_engine`` runs the same harness with a stub engine for
-    a short window. It checks the harness and the metric plumbing on every host. The stub is a
-    test double defined in this file only.
+    the pinned Pulse build is available (task 2.6). This test asserts the SRS 50 ms bound.
+  * ``test_harness_self_check_with_stub_engine`` runs the harness with a stub engine for a
+    short window. It checks the harness mechanics on every host: the heartbeat samples while
+    the loop steps the simulations, and a deliberate 300 ms loop stall is detected, binned,
+    and flagged by the bound assertion. It does not assert the 50 ms bound on ambient load;
+    the bound is a real-engine measurement. The stub is a test double defined in this file
+    only.
 """
 
 import asyncio
@@ -53,6 +56,9 @@ SIMULATIONS = 10
 STEPS_PER_CALL = 10
 DEFAULT_DURATION_S = 60.0
 SELF_CHECK_DURATION_S = 3.0
+# Deliberate event-loop stall for the self-check. Sized so the recorded gap lands in
+# the ">250" histogram bucket with margin over the 50 ms bound.
+SELF_CHECK_STALL_S = 0.30
 PULSE_PRESENT = importlib.util.find_spec("pulse") is not None
 
 DURATION_S = float(os.environ.get("BIOSYNC_PQ_MS006_DURATION_S", DEFAULT_DURATION_S))
@@ -127,8 +133,41 @@ def _assert_gap_within_bound(snapshot, calls):
     assert all(n > 0 for n in calls.values()), "a simulation completed no step calls"
 
 
+async def _run_stall_detection(manager):
+    """Run the heartbeat, block the loop deliberately for SELF_CHECK_STALL_S, return the snapshot."""
+    heartbeat_monitor().reset()
+    task = manager.start_heartbeat()
+    try:
+        await asyncio.sleep(0.05)
+        time.sleep(SELF_CHECK_STALL_S)  # deliberately block the event loop
+        await asyncio.sleep(0.05)
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    return heartbeat_monitor().snapshot()
+
+
 def test_harness_self_check_with_stub_engine(monkeypatch):
-    """Harness and metric plumbing with a stub engine (test double, this file only)."""
+    """Harness self-check with a stub engine: metric plumbing and gap detection.
+
+    Two phases:
+
+    * A clean window with the stub simulations stepping. Asserted: the heartbeat
+      samples while the loop runs the stepping path, every simulation completes
+      steps, and no errors occur. The SRS 50 ms bound is NOT asserted here: this
+      phase runs under whatever ambient load the host imposes, and its purpose is
+      plumbing, not the requirement measurement.
+    * A deliberate 300 ms event-loop stall. Asserted: the harness detects a gap of
+      at least the injected stall, bins it into the ">250" histogram bucket, and
+      the 50 ms bound assertion fires on the stalled data. This proves the bound
+      assertion is wired to the measurement rather than passing vacuously.
+
+    The SRS 50 ms assertion on real load lives exclusively in
+    ``test_pq_fr_ms_006_heartbeat_gap_real_engine``.
+    """
 
     class _SelfCheckStub:
         def __init__(self, patient, data_root):
@@ -153,13 +192,27 @@ def test_harness_self_check_with_stub_engine(monkeypatch):
 
     async def _main():
         sim_ids, calls, errors = await _run_window(manager, configs, SELF_CHECK_DURATION_S)
-        return sim_ids, calls, errors
+        clean = heartbeat_monitor().snapshot()
+        stall = await _run_stall_detection(manager)
+        return sim_ids, calls, errors, clean, stall
 
     try:
-        sim_ids, calls, errors = asyncio.run(_main())
+        sim_ids, calls, errors, clean, stall = asyncio.run(_main())
         assert errors == []
-        _assert_gap_within_bound(heartbeat_monitor().snapshot(), calls)
         assert len(sim_ids) == SIMULATIONS
+        assert clean["samples"] > 0, "heartbeat recorded no samples in the clean window"
+        assert all(n > 0 for n in calls.values()), "a simulation completed no step calls"
+
+        stall_ms = SELF_CHECK_STALL_S * 1000.0
+        assert stall["samples"] > 0, "heartbeat recorded no samples in the stall window"
+        assert stall["max_gap_ms"] >= stall_ms, (
+            f"deliberate {stall_ms:.0f} ms stall not detected: max gap {stall['max_gap_ms']} ms"
+        )
+        assert stall["histogram_ms"][">250"] >= 1, (
+            f"stall gap not binned into the >250 bucket: {stall['histogram_ms']}"
+        )
+        with pytest.raises(AssertionError, match="exceeds"):
+            _assert_gap_within_bound(stall, {sim_id: 1 for sim_id in sim_ids})
     finally:
         for sim_id in list(manager.simulations):
             manager.stop_simulation(sim_id)

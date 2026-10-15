@@ -188,9 +188,9 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 
 **Goal:** Build the FEM soft-tissue scene, the SlicerROS2 and Fast DDS bridge, the Pulse worker delegation, and the FMI 3.0 co-simulation master for FR-MS-001 through FR-MS-004, FR-MS-006, and FR-MS-007.
 
-**Status:** In progress (kickoff 2026-10-14, `SNDEV/docs/impl-2026-10-14-phase2-kickoff.md`). Phase 1 gates G1.1 through G1.3 prerequisites are PASS, and they are prerequisites for FR-MS-006 persistence.
+**Status:** In progress (kickoff 2026-10-14, `SNDEV/docs/impl-2026-10-14-phase2-kickoff.md`). Phase 1 gates G1.1 through G1.3 prerequisites are PASS, and they are prerequisites for FR-MS-006 persistence. Tooling outcomes on 2026-10-14: SOFA v26.06.00 and 3D Slicer 5.12.4 are installed, which clears the preconditions for tasks 2.1 to 2.3. Pulse is pinned to tag `REL_4_3_2`, built as image `biosync-pulse`, and its `.pulse/` provenance is recorded. IQ-4 and OQ-16 pass on the pinned build. The FMI tooling item is partial (FMPy 0.3.32 installed). ROS 2 and SlicerROS2 are deferred by the user decision of 2026-10-14. The FR-MS-006 heartbeat run (600 s, run id `vtm-600s`) measured FAIL against the 50 ms bound: 239.357 ms on the real engine, against a stub baseline of 73.225 ms. The diagnosis is in progress under `SNDEV/docs/impl-2026-10-14-heartbeat-gap-diag.md`.
 
-**Estimate:** 43.0 d.
+**Estimate:** 43.0 d (2.0 d complete: task 2.6; 41.0 d remaining). Completed days are the sum of the done rows: 2.0 = 2.0. Remaining days are the open rows: 5.0 + 8.0 + 6.0 + 4.0 + 4.0 + 6.0 + 8.0 = 41.0 (tasks 2.1, 2.2, 2.3, 2.4, 2.5, 2.7, and 2.8). The total is unchanged at 43.0.
 
 #### Tasks
 
@@ -201,20 +201,20 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 | 2.3 Implement connectivity-based culling, continuous collision detection, needle puncture resistance, dissection, and cutting | `sim/sofa/src/` (created) | 6.0d |
 | 2.4 Publish tool-tip pose, mesh deformation, and wrench data to ROS 2 nodes through SlicerROS2 over Fast DDS, with the wrench rate stated in FR-MS-004 | `sim/bridge/` | 4.0d |
 | 2.5 Delegate Pulse steps to a `ProcessPoolExecutor` with one long-lived worker per engine instance, keep the step off the event loop, and expose a heartbeat-gap metric | `middleware/engine/pulse.py`, `middleware/engine/pulse_bridge.py` | 4.0d |
-| 2.6 Verify the Pulse import and state tests on the pinned engine build, and record the engine source provenance for `.pulse/` | `vv/tests/IQ/test_iq4_pulse_engine_init.py`, `vv/tests/OQ/test_oq16_pulse_state_serialization.py`, `middleware/Dockerfile.pulse` | 2.0d |
+| 2.6 Verify the Pulse import and state tests on the pinned engine build, and record the engine source provenance for `.pulse/` | `vv/tests/IQ/test_iq4_pulse_engine_init.py`, `vv/tests/OQ/test_oq16_pulse_state_serialization.py`, `middleware/Dockerfile.pulse` | 2.0d (done 2026-10-14: `import pulse OK` and 11 passed, 1 skipped in the `biosync-pulse` image; `.pulse/` provenance in `sim/SOUP.md` and `docs/migration-map.md`) |
 | 2.7 Package the thermal ablation, mechanical (SOFA), and physiology (Pulse) plant models as FMI 3.0 FMUs | `sim/fmi/` | 6.0d |
 | 2.8 Build the FMI 3.0 co-simulation master with clocks, scheduled variables, and FMI-LS-BUS over Fast DDS, with a bounded clock-skew and jitter measurement (VAL-005) | `sim/fmi/master/` (created) | 8.0d |
 
 #### Verification Gates
 
-| Gate | Requirement | Acceptance Metric |
-|:-----|:------------|:------------------|
-| G2.1 Mesh ingestion | FR-MS-001 | Meshes for parenchyma, tumor, and vascular keep-out zones are exported from the reference DICOM set with segmentation provenance, and overlap with reference labels is a Dice score of 0.90 or higher (proposed) |
-| G2.2 Solver rate | FR-MS-002, NFR-PERF-003 | Solver step completes within the 16.7 ms frame budget of 60 FPS on the reference scene, with no divergence over a 30-minute load case (proposed) |
-| G2.3 Contact | FR-MS-003 | Zero tunneling events and zero missed contacts across a 1,000-trial needle puncture and cutting suite (proposed) |
-| G2.4 Wrench publish | FR-MS-004 | A wrench publish rate of 500 Hz or higher is sustained for 10 minutes, measured at the ROS 2 subscriber |
-| G2.5 Pulse worker | FR-MS-006 | IQ-4 and OQ-16 PASS on the pinned Pulse build, and the maximum event-loop heartbeat gap is 50 ms or less with 10 concurrent simulations (proposed) |
-| G2.6 Co-simulation | FR-MS-007 | FMUs pass FMI 3.0 import checks, and clock skew and message jitter are 1 ms or less on the three-node Fast DDS test (proposed) |
+| Gate | Requirement | Acceptance Metric | Status |
+|:-----|:------------|:------------------|:-------|
+| G2.1 Mesh ingestion | FR-MS-001 | Meshes for parenchyma, tumor, and vascular keep-out zones are exported from the reference DICOM set with segmentation provenance, and overlap with reference labels is a Dice score of 0.90 or higher (proposed) | OPEN |
+| G2.2 Solver rate | FR-MS-002, NFR-PERF-003 | Solver step completes within the 16.7 ms frame budget of 60 FPS on the reference scene, with no divergence over a 30-minute load case (proposed) | OPEN |
+| G2.3 Contact | FR-MS-003 | Zero tunneling events and zero missed contacts across a 1,000-trial needle puncture and cutting suite (proposed) | OPEN |
+| G2.4 Wrench publish | FR-MS-004 | A wrench publish rate of 500 Hz or higher is sustained for 10 minutes, measured at the ROS 2 subscriber | OPEN |
+| G2.5 Pulse worker | FR-MS-006 | IQ-4 and OQ-16 PASS on the pinned Pulse build, and the maximum event-loop heartbeat gap is 50 ms or less with 10 concurrent simulations (proposed) | FAIL measured. IQ-4 and OQ-16 passed on the pinned build. Heartbeat clause failed: 239.357 ms against the 50 ms bound on the 600 s, 10-simulation run (`vtm-600s`, 2026-10-14). Stub baseline 73.225 ms. Diagnosis in progress under `SNDEV/docs/impl-2026-10-14-heartbeat-gap-diag.md`. |
+| G2.6 Co-simulation | FR-MS-007 | FMUs pass FMI 3.0 import checks, and clock skew and message jitter are 1 ms or less on the three-node Fast DDS test (proposed) | OPEN |
 
 **CSA Risk Annotation:** High Process Risk for all tasks. Tasks 2.2, 2.3, and 2.7 require 100% statement, branch, and MC/DC coverage for their C++ and FMU code. Tasks 2.4, 2.5, and 2.8 require timing evidence for the 500 Hz publish rate, the heartbeat gap, and the co-simulation step, and WCET analysis applies where the timing path is C++. Task 2.1 is High Process Risk because the vascular keep-out mesh feeds the FR-RTA-003 envelope. No task in this phase is Not High Process Risk.
 

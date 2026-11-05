@@ -95,6 +95,7 @@ def evaluate_pair(pipe_name, ref_name):
     r_arr = sitk.GetArrayViewFromImage(r_bin).astype(bool)
     dice_np = dice_numpy(p_arr, r_arr)
     jaccard_np = float(np.logical_and(p_arr, r_arr).sum() / np.logical_or(p_arr, r_arr).sum())
+    recall = float(np.logical_and(p_arr, r_arr).sum() / r_arr.sum()) if r_arr.sum() else 1.0
     if abs(dice_np - dice_sitk) > 1e-6:
         raise RuntimeError("Dice mismatch SimpleITK vs numpy for " + pipe_name)
 
@@ -120,6 +121,7 @@ def evaluate_pair(pipe_name, ref_name):
         "dice": round(dice_sitk, 6),
         "dice_numpy_check": round(dice_np, 6),
         "jaccard": round(jaccard_sitk, 6),
+        "recall": round(recall, 6),
         "gate_threshold": GATE_DICE,
         "verdict": "PASS" if dice_sitk >= GATE_DICE else "FAIL",
     }
@@ -137,12 +139,12 @@ def main():
     }
     with open(os.path.join(OUT_DIR, "evaluation.json"), "w", encoding="utf-8") as f:
         json.dump(doc, f, indent=2)
-    header = "{:<32} {:>8} {:>8} {:>10} {:>10} {:>10} {:>10} {:>8}".format(
-        "segment", "dice", "jaccard", "pred_mL", "ref_mL", "pred_vox", "ref_vox", "verdict")
+    header = "{:<32} {:>8} {:>8} {:>8} {:>10} {:>10} {:>10} {:>10} {:>8}".format(
+        "segment", "dice", "jaccard", "recall", "pred_mL", "ref_mL", "pred_vox", "ref_vox", "verdict")
     print(header)
     for r in results:
-        print("{:<32} {:>8.4f} {:>8.4f} {:>10.2f} {:>10.2f} {:>10d} {:>10d} {:>8}".format(
-            r["pipeline_segment"], r["dice"], r["jaccard"], r["pipeline_volume_ml"], r["reference_volume_ml"],
+        print("{:<32} {:>8.4f} {:>8.4f} {:>8.4f} {:>10.2f} {:>10.2f} {:>10d} {:>10d} {:>8}".format(
+            r["pipeline_segment"], r["dice"], r["jaccard"], r["recall"], r["pipeline_volume_ml"], r["reference_volume_ml"],
             r["pipeline_voxels"], r["reference_voxels"], r["verdict"]))
     print("EVALUATION_DONE", os.path.join(OUT_DIR, "evaluation.json"))
 

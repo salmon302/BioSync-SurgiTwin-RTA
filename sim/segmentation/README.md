@@ -34,10 +34,11 @@ Run order: the pipeline first, then the reference export, then the evaluation. T
 
 The expert SEG labels are the G2.1 reference. They are kept out of pipeline inputs as follows:
 
-- `segment_reference.py` reads a CT-only input folder. Before import, it reads every DICOM header in that folder and aborts if any object has Modality SEG.
-- `segment_reference.py` never opens `output/<dataset-id>/reference/`.
-- `export_reference_labels.py` is the only code that reads the SEG object. It writes `reference/`.
+- `select_seg_input.py` (slice 3a) opens the SEG object only to read the `ReferencedSOPInstanceUID` list and the series and study identifiers needed for selection. It writes `output/<dataset-id>/input/` (the SEG-referenced CT files) and `output/<dataset-id>/input_selection.json` (selection provenance). No SEG pixel data, label data, or geometry enters the pipeline or any output other than that provenance file.
+- `segment_reference.py` reads only the staged `input/` folder. Before import, it reads every DICOM header in that folder and aborts if any object has Modality SEG. It never opens the SEG object, `input_selection.json`, or `output/<dataset-id>/reference/`.
+- `export_reference_labels.py` is the only code that reads SEG label content. It writes `reference/`.
 - `evaluate_g21.py` is the only code that reads `reference/`, apart from the export.
+- Ruling of 2026-11-05 (document owner): the `select_seg_input.py` SEG read is approved under the constraint above. Any change that lets the pipeline consume SEG content or `reference/` at run time requires a new ruling.
 - The reference sidecars carry `is_g21_reference: true` and the holdout statement. The pipeline sidecars and manifest carry `is_g21_reference: false`.
 
 Tuning of thresholds, seeds, and ROI boxes used CT inputs only (CT montage and CT HU statistics). The reference labels were not used to choose a parameter, and no parameter was changed after its Dice reading.
@@ -46,7 +47,7 @@ Tuning of thresholds, seeds, and ROI boxes used CT inputs only (CT montage and C
 
 TCIA HCC-TACE-Seg, patient HCC_001. Details, checksums, and licenses are in `data/PROVENANCE.md`.
 
-- CT series `1.3.6.1.4.1.14519.5.2.1.1706.8374.302065206690360709343725942120`, "C-A-P". Two acquisitions share this series UID: acquisition 2 (36 slices, z -415 to -240 mm) and acquisition 1 (30 slices, z -375 to -230 mm). The pipeline uses acquisition 2 because it has the most slices.
+- CT series `1.3.6.1.4.1.14519.5.2.1.1706.8374.302065206690360709343725942120`, "C-A-P". Two acquisitions share this series UID: acquisition 2 (36 slices, z -415 to -240 mm) and acquisition 1 (30 slices, z -375 to -230 mm). The pipeline input is the 36 SEG-referenced instances (21 acquisition 2 and 15 acquisition 1), selected by `select_seg_input.py`. Before slice 3a, the pipeline used all acquisition 2 files.
 - SEG series `1.2.276.0.7230010.3.1.3.8323329.719.1600928570.399942`, one object, SOP instance `1.2.276.0.7230010.3.1.4.8323329.719.1600928570.399943`, with four segments: Liver, Mass, Portal vein, and Abdominal aorta.
 - The SEG references 36 CT instances. Their z positions equal the acquisition 2 z set exactly, with the same origin, orientation, and 0.78125 mm pixel spacing. 21 of the referenced instances carry AcquisitionNumber 2 and 15 carry AcquisitionNumber 1, because the two acquisitions overlap in z. At those 15 levels the reference was drawn on different pixel data from the pipeline input. This is a limit on the Dice reading and is recorded in `reference/*_provenance.json`.
 - The CT has no contrast phase tags. The phase is inferred from the image as portal venous.

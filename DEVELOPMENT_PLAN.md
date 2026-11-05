@@ -1,9 +1,9 @@
 # SurgiTwin-RTA Development Plan
 
-**Version:** 1.0 (draft)  
-**Date:** 2026-10-13  
-**Derived From:** SRS.md v1.0.0  
-**Status:** Draft with open validation findings (see Section 6). Phase 0 complete. Phase 1 complete, with gates G1.1 to G1.8 closed (G1.8 with recorded boundaries). Phase 2 in progress (kickoff 2026-10-14, `SNDEV/docs/impl-2026-10-14-phase2-kickoff.md`). SRS.md v1.1.0 was applied 2026-10-14 (`SNDEV/docs/impl-2026-10-14-srs-v1.1-apply.md`), closing Blockers VAL-001 to VAL-004. No commercial licenses are used in development (decision of 2026-10-14, `SNDEV/docs/impl-2026-10-14-no-commercial-licenses.md`). Major and Minor findings remain open.
+**Version:** 2.0 (draft)  
+**Date:** 2026-11-04  
+**Derived From:** SRS.md v1.2.0  
+**Status:** Draft with open validation findings (see Section 6). Phase 0 complete. Phase 1 complete, with gates G1.1 to G1.8 closed (G1.8 with recorded boundaries). Phase 2 in progress (kickoff 2026-10-14, `SNDEV/docs/impl-2026-10-14-phase2-kickoff.md`): tasks 2.5 and 2.6 done (gate G2.5 PASS), task 2.2 in progress at slice 1 (commit `3beb6f0`), task 2.0 added at the 2026-11-04 shift for the SRS v1.2.0 record sync. SRS.md v1.1.0 was applied 2026-10-14 (`SNDEV/docs/impl-2026-10-14-srs-v1.1-apply.md`), closing Blockers VAL-001 to VAL-004. SRS.md v1.2.0 was applied 2026-11-04 (`docs/srs-v1.2-change-proposal.md`, `SNDEV/docs/impl-2026-11-04-srs-v1.2-proposal.md`): VAL-026 pins ROS 2 provisioning to ROS 2 Jazzy natively on Windows via pixi and the RoboStack `robostack-jazzy` conda channel with `rmw_fastrtps_cpp`; VAL-027 (Option B) replaces the SlicerROS2 module requirement with a native ROS 2 bridge node in `sim/bridge/`; VAL-028 replaces the FR-MS-007 FMI-LS-BUS and `quantization-error-free` wording with scheduled-variable co-simulation over the pinned ROS 2 / Fast DDS layer. No commercial licenses are used in development (decision of 2026-10-14, `SNDEV/docs/impl-2026-10-14-no-commercial-licenses.md`). Major and Minor findings remain open.
 
 ---
 
@@ -32,13 +32,14 @@ Rows marked Precondition need a license purchase, a hardware order, or a licensi
 | Layer | Technology | Version Constraint | License or Hardware Precondition |
 |:------|:-----------|:-------------------|:---------------------------------|
 | Simulation and RTA core | C++17 | Pinned by `CMAKE_CXX_STANDARD 17` in `CMakeLists.txt`. The SRS "C++17/C++20" wording is open (VAL-016). | None. MSVC 19.44 used for the scaffold build. |
-| Soft-tissue FEM | SOFA | One tagged release pinned in `sim/sofa/` in Phase 2 | LGPL-2.1 (confirm). No hardware. |
-| Segmentation and ROS bridge | 3D Slicer and SlicerROS2 | Tagged releases pinned in `sim/bridge/` in Phase 2 | 3D Slicer BSD-style license. SlicerROS2 license (confirm). |
-| Robotics middleware | ROS 2 and Fast DDS | One ROS 2 distribution and its matching Fast DDS version, pinned together | Apache-2.0. |
+| Soft-tissue FEM | SOFA | v26.06.00 pinned in `sim/SOUP.md` (task 2.2 slice 1) | LGPL-2.1 (confirm). No hardware. |
+| Segmentation | 3D Slicer | 5.12.4 native Windows pin for FR-MS-001 DICOM ingestion and segmentation (installed 2026-10-14) | 3D Slicer BSD-style license. No hardware. |
+| ROS 2 bridge | ROS 2 bridge node in `sim/bridge/` | C++ bridge node built against the resolved RoboStack environment of task 2.0.3. SlicerROS2 is dropped (VAL-027 Option B). | Apache-2.0. No WSL2 or Linux build. |
+| Robotics middleware | ROS 2 Jazzy and Fast DDS (`rmw_fastrtps_cpp`) | ROS 2 Jazzy natively on Windows via pixi and the RoboStack `robostack-jazzy` conda channel (conda-forge only), `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`, with the matching Fast DDS package version from the resolved environment and the lockfile (`pixi.lock` or a conda explicit spec) committed with the SOUP row (VAL-026) | Apache-2.0. WSL2 and Ubuntu 24.04 are no longer preconditions. |
 | Photorealistic rendering | NVIDIA Omniverse / Isaac Sim with USD | Runtime and USD versions pinned together in Phase 7 | Precondition: NVIDIA Omniverse license terms (proprietary) and an RTX-class GPU. |
 | Physiology | Kitware Pulse Physiology Engine via Python `ProcessPoolExecutor` | Pinned source commit built from the `.pulse/` prerequisite (not in the repository) | Apache-2.0 (confirm). Built by `middleware/Dockerfile.pulse`. |
-| Co-simulation | FMI 3.0 and FMI-LS-BUS | FMI 3.0 standard; FMI-LS-BUS 1.0 over Fast DDS | Open standards (confirm). The SRS names no FMI master tool, so the master is built in Phase 2. |
-| Middleware | Python 3.11+ and FastAPI | Python 3.11 is the target (the scaffold ran on 3.14). FastAPI is pinned in `middleware/requirements.txt`, and the pins are not yet resolved against PyPI. | MIT. |
+| Co-simulation | FMI 3.0 scheduled-variable co-simulation | FMI 3.0 clocks and scheduled variables over the pinned ROS 2 / Fast DDS layer (VAL-028). FMI-LS-BUS is dropped: the published FMI-LS-BUS 1.0 defines no DDS transport. | Open standards (confirm). The SRS names no FMI master tool, so the master is built in Phase 2. |
+| Middleware | Python 3.11+ and FastAPI | Python 3.11 is the target (the scaffold ran on 3.14). FastAPI is pinned in `middleware/requirements.txt`, and the pins are not yet resolved against PyPI. Interpreter split (VAL-026): ROS-side subscriber and bag tooling run at CPython 3.12 under the RoboStack environment, and the OQ suites under `.venv-qual311` (Python 3.11.9) drive them and parse JSON captures in `SNDEV/logs/`. | MIT. |
 | Migrations | Alembic | Pinned in `middleware/requirements.txt`; single baseline revision 0001 | MIT. |
 | Clinical data | HL7 FHIR R4 with `fhir.resources` and Pydantic v2 | `fhir.resources` pinned; migration-map Table 3 records the 8.x module-name fix | MIT (`fhir.resources`, Pydantic). |
 | Instrument interoperability | gRPC, Protobuf, SiLA 2 FDL | gRPC over HTTP/2; one Protobuf schema per FDL feature | SiLA 2 specifications are open. SDK license is confirmed at selection (Phase 5). |
@@ -64,7 +65,7 @@ Rows marked Precondition need a license purchase, a hardware order, or a licensi
 
 | Tier | Directory | Contents | Status |
 |:-----|:----------|:---------|:-------|
-| Virtual Proving Ground (M&S) | `sim/` | SOFA FEM scene (`sim/sofa/`), Pulse engine notes (`sim/pulse/`), FMI master and FMUs (`sim/fmi/`), SlicerROS2 bridge (`sim/bridge/`), USD rendering (`sim/omniverse/`, Phase 7) | `sim/sofa`, `sim/fmi`, and `sim/bridge` build only when their CMake options are ON. The Pulse binding runs from `middleware/engine/pulse.py`. |
+| Virtual Proving Ground (M&S) | `sim/` | SOFA FEM scene (`sim/sofa/`), Pulse engine notes (`sim/pulse/`), FMI master and FMUs (`sim/fmi/`), ROS 2 bridge node (`sim/bridge/`, VAL-027 Option B), USD rendering (`sim/omniverse/`, Phase 7) | `sim/sofa`, `sim/fmi`, and `sim/bridge` build only when their CMake options are ON. The Pulse binding runs from `middleware/engine/pulse.py`. |
 | Run-Time Assurance (RTA) | `rta/` | Simplex switch, safety envelope, timed automata, and the fallback controller (`rta/include/rta/fallback_controller.h` and `rta/src/fallback_controller.cpp`, created in Phase 3) | Placeholder classes `SafetyEnvelope`, `SimplexSwitch`, and `TimedAutomata` build by default with stub thresholds of 5.0 mm and 2.0 N. |
 | Compliance and Interoperability (Informatics) | `middleware/`, `database/`, `edge/`, `frontend/` | FastAPI gateway, hash chain engine, FHIR validation, Pulse worker, SQL migrations 001 to 003, ESP32-S3 firmware (Phase 4), React client (Phase 7) | Gateway baseline migrated at commit `0b5b8d2`. The telemetry relay landed at commit `d0ef2c5` (Phase 1 task 1.5, closed at `654510b`). |
 | Continuous Verification (V&V) | `vv/` | ASAM XIL harness (`vv/xil/`), VTM (`vv/traceability/`), IQ, OQ, and PQ tests (`vv/tests/`) | IQ-0 layout test present. Migrated IQ, OQ, and PQ suites present. |
@@ -73,7 +74,7 @@ Rows marked Precondition need a license purchase, a hardware order, or a licensi
 
 ```
 Virtual Proving Ground (sim/)
-  SOFA FEM core, SlicerROS2 bridge, FMI 3.0 master
+  SOFA FEM core, ROS 2 bridge node, FMI 3.0 master
         |  tool-tip pose, tissue state, wrench (Fast DDS, ROS 2)
         v
 Primary controller (DRL policy or teleoperator)
@@ -102,6 +103,8 @@ V&V (vv/) spans all tiers: XIL harness, VTM, IQ/OQ/PQ, CI gates
 | One long-lived worker per Pulse engine instance | The native engine object cannot be pickled, so a process pool cannot receive it as an argument (FR-MS-006) |
 | Gateway code reused by copy and adapt, with a per-file record | Each reused file has an origin path and an adaptation note in `docs/migration-map.md` |
 | FMI 3.0 co-simulation for plant models | Standard clocks and scheduled variables (FR-MS-007); the master is built in Phase 2 |
+| ROS 2 bridge node instead of SlicerROS2 (VAL-027 Option B) | FR-MS-004 covers the bridge function, and a native ROS 2 node drops the WSL2 route and the Slicer source build. One Slicer pin remains (5.12.4 native, FR-MS-001). |
+| Scheduled-variable co-simulation over ROS 2 / Fast DDS, not FMI-LS-BUS (VAL-028) | The published FMI-LS-BUS 1.0 defines no DDS transport; scheduled variables over the pinned layer carry the 1 ms skew and jitter bounds of gate G2.6 |
 | Chart provider abstraction with ECharts 5 as the default | Keeps the charting backend replaceable, as the Gateway did after its approved deviation |
 
 ---
@@ -186,35 +189,40 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 
 ### Phase 2: M&S Tier (Soft-Tissue, Middleware Bridge, Co-Simulation)
 
-**Goal:** Build the FEM soft-tissue scene, the SlicerROS2 and Fast DDS bridge, the Pulse worker delegation, and the FMI 3.0 co-simulation master for FR-MS-001 through FR-MS-004, FR-MS-006, and FR-MS-007.
+**Goal:** Build the FEM soft-tissue scene, the ROS 2 bridge node over Fast DDS (VAL-027 Option B), the Pulse worker delegation, and the FMI 3.0 scheduled-variable co-simulation master for FR-MS-001 through FR-MS-004, FR-MS-006, and FR-MS-007.
 
-**Status:** In progress (kickoff 2026-10-14, `SNDEV/docs/impl-2026-10-14-phase2-kickoff.md`). Phase 1 gates G1.1 through G1.3 prerequisites are PASS, and they are prerequisites for FR-MS-006 persistence. Tooling outcomes on 2026-10-14: SOFA v26.06.00 and 3D Slicer 5.12.4 are installed, which clears the preconditions for tasks 2.1 to 2.3. Pulse is pinned to tag `REL_4_3_2`, built as image `biosync-pulse`, and its `.pulse/` provenance is recorded. IQ-4 and OQ-16 pass on the pinned build. The FMI tooling item is partial (FMPy 0.3.32 installed). ROS 2 and SlicerROS2 are deferred by the user decision of 2026-10-14. The `vtm-600s` run (600 s, 10 simulations) measured 239.357 ms against the 50 ms bound on 2026-10-14. The diagnosis in `SNDEV/docs/impl-2026-10-14-heartbeat-gap-diag.md` attributed the gaps to a lazy first-step metrics-hook import and generation-2 GC cost from an unbounded metrics history, and fixed both on the production path in `middleware/engine/pulse.py`. The rerun `heartbeat-diag-1` (2026-10-15) measured a maximum gap of 16.778 ms with zero samples above 20 ms, so the G2.5 heartbeat clause is PASS.
+**Status:** In progress (kickoff 2026-10-14, `SNDEV/docs/impl-2026-10-14-phase2-kickoff.md`). Phase 1 gates G1.1 through G1.3 prerequisites are PASS, and they are prerequisites for FR-MS-006 persistence. Tooling outcomes on 2026-10-14: SOFA v26.06.00 and 3D Slicer 5.12.4 are installed, which clears the preconditions for tasks 2.1 to 2.3. Pulse is pinned to tag `REL_4_3_2`, built as image `biosync-pulse`, and its `.pulse/` provenance is recorded. IQ-4 and OQ-16 pass on the pinned build. The FMI tooling item is partial (FMPy 0.3.32 installed). ROS 2 provisioning is pinned by SRS v1.2.0 (VAL-026) to ROS 2 Jazzy natively on Windows via pixi and the RoboStack `robostack-jazzy` channel with `rmw_fastrtps_cpp`, superseding the WSL2 Ubuntu 24.04 route of the procurement guide; the environment is resolved and locked in task 2.0.3. SlicerROS2 is dropped by VAL-027 (Option B): task 2.4 builds a native ROS 2 bridge node in `sim/bridge/`, and procurement item 5 is marked dropped. The `vtm-600s` run (600 s, 10 simulations) measured 239.357 ms against the 50 ms bound on 2026-10-14. The diagnosis in `SNDEV/docs/impl-2026-10-14-heartbeat-gap-diag.md` attributed the gaps to a lazy first-step metrics-hook import and generation-2 GC cost from an unbounded metrics history, and fixed both on the production path in `middleware/engine/pulse.py`. The rerun `heartbeat-diag-1` (2026-10-15) measured a maximum gap of 16.778 ms with zero samples above 20 ms, so the G2.5 heartbeat clause is PASS. Task 2.2 landed slice 1 at commit `3beb6f0` (`SNDEV/docs/impl-2026-10-15-sofa-scene-slice1.md`): the NeoHookean scene with `EulerImplicitSolver` and a PCG linear solver, the placeholder mesh generator (1296 tets: 36 tumor, 1260 parenchyma; not G2.1 output), and the headless step-timing harness with `vv/tests/OQ/test_oq_fr_ms_002_solver_rate.py`. Slice-1 captures in `SNDEV/logs/` show `sofa-2026-10-15-g22-slice1-1000steps.json` at max 16.690 ms (PASS on the 16.7 ms budget by 0.010 ms) and `sofa-2026-10-15-g22-slice1-2000steps.json` at max 23.910 ms with 7 of 2000 steps over budget (FAIL on the max statistic). Slice-2 items for task 2.2 closure: the 30-minute G2.2 load case, re-measurement on the G2.1 meshes, the max-statistic budget fix or a gate-wording decision (max versus p95), and the recorded SofaPython3 boundary (the scene stays `.scn` XML because the binding needs `python312.dll`; the RoboStack environment of task 2.0.3 brings a CPython 3.12 and the binding can be re-evaluated then). The direct `SparseLDLSolver` chain measured 17.2 to 19.6 ms mean per step and was replaced by PCG.
 
-**Estimate:** 43.0 d (6.0 d complete: tasks 2.5 and 2.6; 37.0 d remaining). Completed days are the sum of the done rows: 2.0 (task 2.6) + 4.0 (task 2.5) = 6.0. Remaining days are the open rows: 5.0 + 8.0 + 6.0 + 4.0 + 6.0 + 8.0 = 37.0 (tasks 2.1, 2.2, 2.3, 2.4, 2.7, and 2.8). The total is unchanged at 43.0.
+**Estimate:** 44.5 d (6.0 d complete: tasks 2.5 and 2.6; 38.5 d remaining). Completed days are the sum of the done rows: 2.0 (task 2.6) + 4.0 (task 2.5) = 6.0. Remaining days are the open rows: 1.5 + 5.0 + 8.0 + 6.0 + 4.0 + 6.0 + 8.0 = 38.5 (tasks 2.0, 2.1, 2.2, 2.3, 2.4, 2.7, and 2.8). The total rises from 43.0 by the 1.5 d record-sync task 2.0 added at the 2026-11-04 shift. Task 2.2 is in progress at slice 1 and keeps its 8.0 d row until closure.
 
 #### Tasks
 
 | Task | Output | Est. |
 |:-----|:-------|:-----|
+| 2.0.1 Commit the applied SRS v1.2.0 baseline (SRS.md, `docs/srs-v1.2-change-proposal.md`, `SNDEV/docs/impl-2026-11-04-srs-v1.2-proposal.md`) and register VAL-026, VAL-027, and VAL-028 in Section 6.3 | Baseline commit with sign-off | 0.25d |
+| 2.0.2 Sync `docs/procurement-guide.md`: item 4 becomes the pixi plus RoboStack install with a pub/sub round-trip done-when check, item 5 is marked dropped (VAL-027 Option B), the Section 6 FMI-LS-BUS fallback becomes normative under VAL-028, and the Section 4 WSL2 route is marked superseded | `docs/procurement-guide.md` | 0.25d |
+| 2.0.3 Resolve and lock the ROS 2 environment: install ROS 2 Jazzy via pixi and `robostack-jazzy` (conda-forge only) with `rmw_fastrtps_cpp`, record the resolved `ros-jazzy` and Fast DDS package versions in `sim/SOUP.md`, add the RoboStack provenance row (channel URL, package list source, conda-forge-only policy), drop the SlicerROS2 and FMI-LS-BUS rows, and commit the lockfile (`pixi.lock` or a conda explicit spec) | `sim/SOUP.md`, `pixi.lock` | 0.5d |
+| 2.0.4 Sync `vv/traceability/vtm.md`: the FR-MS-004 name cell becomes `M&S / ROS 2 middleware bridge over Fast DDS (`sim/bridge/`)`, the method cells of FR-MS-004, FR-MS-005, FR-MS-007, and NFR-PERF-002 carry the VAL-026 parenthetical, and the FR-MS-007 class cell drops FMI-LS-BUS | `vv/traceability/vtm.md` | 0.25d |
+| 2.0.5 Clean residual SlicerROS2 and FMI-LS-BUS text in `README.md`, `sim/README.md`, `sim/bridge/README.md`, `sim/fmi/README.md`, and the `SRTA_BUILD_BRIDGE` option description in `CMakeLists.txt`. SNDEV logs are historical records and are not edited. | The named files | 0.25d |
 | 2.1 Ingest DICOM through 3D Slicer and produce segmented meshes for parenchymal organ, tumor, and vascular keep-out zones, with segmentation provenance | `sim/segmentation/` (created) | 5.0d |
 | 2.2 Build the hyperelastic FEM scene with an implicit solver in SOFA, pin the SOFA release, and open the SOUP inventory | `sim/sofa/` (scene sources created under `sim/sofa/src/`), `sim/SOUP.md` (created) | 8.0d |
 | 2.3 Implement connectivity-based culling, continuous collision detection, needle puncture resistance, dissection, and cutting | `sim/sofa/src/` (created) | 6.0d |
-| 2.4 Publish tool-tip pose, mesh deformation, and wrench data to ROS 2 nodes through SlicerROS2 over Fast DDS, with the wrench rate stated in FR-MS-004 | `sim/bridge/` | 4.0d |
+| 2.4 Implement the ROS 2 bridge node over Fast DDS (VAL-027 Option B) that publishes tool-tip pose, mesh deformation state, and 6-axis wrench data to ROS 2 nodes at the FR-MS-004 rate, built against the pinned RoboStack Jazzy environment of task 2.0.3 | `sim/bridge/` (C++ bridge code) | 4.0d (scope reduced by VAL-027 Option B: no SlicerROS2 build, no WSL2, no cross-boundary DDS case; re-estimate at kickoff) |
 | 2.5 Delegate Pulse steps to a `ProcessPoolExecutor` with one long-lived worker per engine instance, keep the step off the event loop, and expose a heartbeat-gap metric | `middleware/engine/pulse.py`, `middleware/engine/pulse_bridge.py` | 4.0d (done 2026-10-15: delegation landed at `5fb26a3`; the heartbeat-gap metric and the FR-MS-006 fixes are recorded in `SNDEV/docs/impl-2026-10-14-heartbeat-gap-diag.md`, gate G2.5 PASS) |
 | 2.6 Verify the Pulse import and state tests on the pinned engine build, and record the engine source provenance for `.pulse/` | `vv/tests/IQ/test_iq4_pulse_engine_init.py`, `vv/tests/OQ/test_oq16_pulse_state_serialization.py`, `middleware/Dockerfile.pulse` | 2.0d (done 2026-10-14: `import pulse OK` and 11 passed, 1 skipped in the `biosync-pulse` image; `.pulse/` provenance in `sim/SOUP.md` and `docs/migration-map.md`) |
 | 2.7 Package the thermal ablation, mechanical (SOFA), and physiology (Pulse) plant models as FMI 3.0 FMUs | `sim/fmi/` | 6.0d |
-| 2.8 Build the FMI 3.0 co-simulation master with clocks, scheduled variables, and FMI-LS-BUS over Fast DDS, with a bounded clock-skew and jitter measurement (VAL-005) | `sim/fmi/master/` (created) | 8.0d |
+| 2.8 Build the FMI 3.0 co-simulation master with clocks and scheduled-variable co-simulation over the pinned ROS 2 / Fast DDS layer (VAL-028), with the bounded 1 ms clock-skew and message-jitter measurement of VAL-005 and per-message timestamps recorded | `sim/fmi/master/` (created) | 8.0d |
 
 #### Verification Gates
 
 | Gate | Requirement | Acceptance Metric | Status |
 |:-----|:------------|:------------------|:-------|
 | G2.1 Mesh ingestion | FR-MS-001 | Meshes for parenchyma, tumor, and vascular keep-out zones are exported from the reference DICOM set with segmentation provenance, and overlap with reference labels is a Dice score of 0.90 or higher (proposed) | OPEN |
-| G2.2 Solver rate | FR-MS-002, NFR-PERF-003 | Solver step completes within the 16.7 ms frame budget of 60 FPS on the reference scene, with no divergence over a 30-minute load case (proposed) | OPEN |
+| G2.2 Solver rate | FR-MS-002, NFR-PERF-003 | Solver step completes within the 16.7 ms frame budget of 60 FPS on the reference scene, with no divergence over a 30-minute load case (proposed) | OPEN. Slice-1 captures recorded (2026-10-15): the 2000-step run fails the max statistic (23.910 ms, 7 of 2000 steps over the 16.7 ms budget), and max versus p95 gate wording is unresolved (task 2.2 slice 2) |
 | G2.3 Contact | FR-MS-003 | Zero tunneling events and zero missed contacts across a 1,000-trial needle puncture and cutting suite (proposed) | OPEN |
-| G2.4 Wrench publish | FR-MS-004 | A wrench publish rate of 500 Hz or higher is sustained for 10 minutes, measured at the ROS 2 subscriber | OPEN |
+| G2.4 Wrench publish | FR-MS-004 | A wrench publish rate of 500 Hz or higher is sustained for 10 minutes, measured at the ROS 2 subscriber on the RoboStack Jazzy environment of task 2.0.3, with the CPython 3.12 subscriber and `.venv-qual311` driver split named in the test configuration record | OPEN |
 | G2.5 Pulse worker | FR-MS-006 | IQ-4 and OQ-16 PASS on the pinned Pulse build, and the maximum event-loop heartbeat gap is 50 ms or less with 10 concurrent simulations (proposed) | PASS. IQ-4 and OQ-16 passed on the pinned build (task 2.6). Heartbeat clause passed on rerun `heartbeat-diag-1` (2026-10-15): maximum gap 16.778 ms against the 50 ms bound over 600 s with 10 concurrent simulations, 55,846 samples with zero above 20 ms. The earlier `vtm-600s` measurement (239.357 ms) is diagnosed and fixed in `SNDEV/docs/impl-2026-10-14-heartbeat-gap-diag.md`. Capture: `SNDEV/logs/pq-2026-10-15-fr-ms-006-heartbeat-diag-1.json`. |
-| G2.6 Co-simulation | FR-MS-007 | FMUs pass FMI 3.0 import checks, and clock skew and message jitter are 1 ms or less on the three-node Fast DDS test (proposed) | OPEN |
+| G2.6 Co-simulation | FR-MS-007 | FMUs pass FMI 3.0 import checks, and clock skew and message jitter are 1 ms or less on the three-node Fast DDS test over the pinned ROS 2 Jazzy / RoboStack layer (VAL-028), with per-message timestamps recorded (proposed) | OPEN |
 
 **CSA Risk Annotation:** High Process Risk for all tasks. Tasks 2.2, 2.3, and 2.7 require 100% statement, branch, and MC/DC coverage for their C++ and FMU code. Tasks 2.4, 2.5, and 2.8 require timing evidence for the 500 Hz publish rate, the heartbeat gap, and the co-simulation step, and WCET analysis applies where the timing path is C++. Task 2.1 is High Process Risk because the vascular keep-out mesh feeds the FR-RTA-003 envelope. No task in this phase is Not High Process Risk.
 
@@ -370,7 +378,7 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 
 | Task | Output | Est. |
 |:-----|:-------|:-----|
-| 7.1 Link ROS 2 kinematic and deformation streams into USD layers in Omniverse / Isaac Sim, with the USD and runtime versions pinned | `sim/omniverse/` (created) | 6.0d |
+| 7.1 Link ROS 2 kinematic and deformation streams into USD layers in Omniverse / Isaac Sim, with the USD and runtime versions pinned (the ROS 2 leg runs on the pinned RoboStack Jazzy environment of task 2.0.3; NVIDIA documents a native Windows pixi workspace for Isaac Sim ROS 2 and marks its WSL2 method deprecated) | `sim/omniverse/` (created) | 6.0d |
 | 7.2 Export synthetic endoscopic camera frames for robotic vision algorithms | `sim/omniverse/` (created) | 4.0d |
 | 7.3 Build the React 18 and TypeScript WebGL waveform frontend behind the chart provider abstraction | `frontend/` (source created under `frontend/src/`) | 5.0d |
 | 7.4 Migrate the Gateway telemetry visualization path and apply LTTB downsampling before the push | `frontend/`, `middleware/engine/lttb.py` | 3.0d |
@@ -457,7 +465,7 @@ The SRS audit (`SNDEV/docs/impl-2026-10-13-srs-baseline-validation.md`) found 4 
 
 | ID | Open Question | Interim Handling | Phase |
 |:---|:--------------|:-----------------|:------|
-| VAL-005 | Replace "zero quantization error" with bounded clock-skew and message-jitter limits and a stated test setup | 1 ms limits in gate G2.6 (proposed), measured in task 2.8 | 2 |
+| VAL-005 | Replace "zero quantization error" with bounded clock-skew and message-jitter limits and a stated test setup | 1 ms limits in gate G2.6 (proposed), measured in task 2.8. The clause phrase was removed from FR-MS-007 by VAL-028 (SRS v1.2.0). | 2 |
 | VAL-006 | Move the 60 FPS, 500 Hz, and divergence definitions to the requirements that own them | 60 FPS in G2.2, 500 Hz in G2.4, divergence as a 30-minute load case | 2 |
 | VAL-007 | Define an observable proxy for "zero main-loop blocking" | Heartbeat gap of 50 ms or less with 10 sessions in G2.5 (proposed) | 2 |
 | VAL-008 | Assign one IEC 62304 class per software item, with the risk file cited | Class C is provisional for High Process Risk items, and each item's class is set in the risk file (VAL-025) | 1, 3 |
@@ -470,6 +478,16 @@ The SRS audit (`SNDEV/docs/impl-2026-10-13-srs-baseline-validation.md`) found 4 
 | VAL-015 | Restate tamper detection as a defined injection suite with row counts and tamper types | Injection suite in task 1.2 with stated row counts and tamper types | 1 |
 | VAL-016 | Pin the safety cores to C++17, or define a deviation set for C++20 constructs | C++17 is pinned in `CMakeLists.txt`. The deviation register is decided before gate G3.1 closes. | 3 |
 
+### 6.3 Findings Resolved by SRS v1.2.0 (2026-11-04)
+
+Findings VAL-026, VAL-027, and VAL-028 were opened and closed by the v1.2.0 change set (`docs/srs-v1.2-change-proposal.md`, `SNDEV/docs/impl-2026-11-04-srs-v1.2-proposal.md`). The baseline register `SNDEV/docs/impl-2026-10-13-srs-baseline-validation.md` is unchanged (overwrite policy).
+
+| ID | Resolution in SRS v1.2.0 | Residual plan action |
+|:---|:-------------------------|:---------------------|
+| VAL-026 | ROS 2 provisioning pinned to ROS 2 Jazzy natively on Windows via pixi and the RoboStack `robostack-jazzy` conda channel with `rmw_fastrtps_cpp`, named in the FR-MS-004, FR-MS-007, and NFR-PERF-002 toolchain cells. The WSL2 Ubuntu 24.04 route of the procurement guide is superseded for tasks 2.4, 2.8, and 7.1. | Task 2.0.3 resolves and locks the environment and syncs the SOUP and procurement rows. The CPython 3.12 (RoboStack) and Python 3.11.9 (`.venv-qual311`) split is recorded in the gate G2.4 and G2.6 test configurations. |
+| VAL-027 | Closed as Option B. FR-MS-004 requires a ROS 2 bridge node over Fast DDS in `sim/bridge/`; the SlicerROS2 module is not a requirement. WSL2 leaves the plan and procurement item 5 is dropped. FR-MS-001 stays on the native Windows 3D Slicer 5.12.4 pin. | Task 2.4 builds the bridge node. Task 2.0.2 and task 2.0.5 clean the residual SlicerROS2 text (procurement, SOUP, VTM name cell, README and CMake descriptions). |
+| VAL-028 | FR-MS-007 specifies FMI 3.0 clocks and scheduled-variable co-simulation over the pinned ROS 2 / Fast DDS layer with 1 ms clock-skew and message-jitter bounds. The FMI-LS-BUS DDS reference and the `quantization-error-free` phrase are removed. | Task 2.8 implements the master against the scheduled-variable clause. Task 2.0.3 drops the FMI-LS-BUS SOUP row, and task 2.0.4 drops FMI-LS-BUS from the FR-MS-007 VTM class cell. |
+
 ---
 
 ## 7. Risk Register
@@ -478,8 +496,9 @@ The SRS audit (`SNDEV/docs/impl-2026-10-13-srs-baseline-validation.md`) found 4 
 
 | Risk | Impact | Likelihood | Mitigation |
 |:-----|:-------|:-----------|:-----------|
-| SOFA does not hold real-time determinism at the solver rate needed for 60 FPS and the 500 Hz wrench publish | Missed frame and publish targets. Envelope inputs go stale. | Medium | Gates G2.2 and G2.4 at Phase 2 exit. Reduce telemetry only through LTTB, which keeps peaks, and keep the scene within the measured budget. |
-| FMI clock synchronization quantization across Fast DDS adds error to the co-simulation step | Step error exceeds the bounded skew and produces false envelope decisions | High | Replace the zero-error claim with bounded limits (VAL-005), measure in gate G2.6, and use FMI 3.0 scheduled variables and step-size control in the master |
+| SOFA does not hold real-time determinism at the solver rate needed for 60 FPS and the 500 Hz wrench publish | Missed frame and publish targets. Envelope inputs go stale. | Medium | Gates G2.2 and G2.4 at Phase 2 exit. Reduce telemetry only through LTTB, which keeps peaks, and keep the scene within the measured budget. The risk is live: slice-1 captures (2026-10-15) show max step 23.910 ms on a 2000-step run, 7 steps over the 16.7 ms budget, with the PCG solver already substituted for the slower direct chain. |
+| FMI clock synchronization error across Fast DDS adds error to the co-simulation step | Step error exceeds the bounded skew and produces false envelope decisions | High | Bounded 1 ms clock-skew and message-jitter limits (VAL-005, made normative by VAL-028), measured in gate G2.6 with per-message timestamps, and FMI 3.0 scheduled variables and step-size control in the master over the pinned ROS 2 / Fast DDS layer |
+| RoboStack environment drift and the interpreter split | The ROS 2 Jazzy conda packages or the conda-forge channel change under the pin, or the CPython 3.12 ROS environment diverges from the Python 3.11.9 qualification venv; bridge and co-simulation builds break and gate measurements lose reproducibility | Medium | Commit `pixi.lock` or a conda explicit spec with the SOUP row (task 2.0.3), hold the conda-forge-only channel policy from the RoboStack conda guide (remove the `defaults` channel), and name the interpreter split in every gate test configuration record |
 | WCET tooling does not support the target CPU or MCU, or it yields loose bounds | The candidate RTA deadline cannot be stated, and FR-RTA-004 cannot be tested | Medium | Measure on the target with statistical timing (task 3.6), keep the decision path free of heap and locks, and record tool limits in `sim/SOUP.md` |
 | Omniverse / Isaac Sim dependency (GPU class, runtime license, USD version drift) | Phase 7 is blocked, and the NFR-PERF-003 rendering path is unavailable | Medium | Pin the USD and runtime versions. Rendering is Not High Process Risk, so the M&S and RTA tiers do not depend on it. Record the GPU precondition before Phase 7 starts. |
 | Kitware Pulse is single-threaded per patient and its engine object cannot be pickled | ProcessPoolExecutor delegation (FR-MS-006) fails, and the event loop blocks | High | One long-lived worker per engine instance (task 2.5) and heartbeat gate G2.5. The Gateway open item in migration-map Table 3 tracks the blocker. |

@@ -18,6 +18,9 @@
 #endif
 #include <windows.h>
 #include <mmsystem.h>
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+#endif
 #endif
 
 namespace srtra_bridge
@@ -31,25 +34,90 @@ constexpr double kPathHz = 0.2;
 constexpr std::int64_t kNanosPerSecond = 1000000000LL;
 constexpr std::chrono::seconds kSubscriberWaitLimit(30);
 
-// The default Windows timer resolution is about 15.6 ms, which is coarser than a 2 ms tick.
-// This guard raises the resolution to 1 ms for the lifetime of the publish loop.
-class TimerResolutionGuard
+using Clock = std::chrono::steady_clock;
+
+// Waits until a target time on the steady clock.
+//
+// Preferred mechanism: a high-resolution waitable timer (CreateWaitableTimerExW with
+// CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, Windows 10 1803 or later). The timer is created once
+// in the constructor and re-armed with a relative due time per tick, so the loop does not
+// allocate.
+//
+// Fallback mechanism: std::this_thread::sleep_until with timeBeginPeriod(1) raising the system
+// timer resolution from about 15.6 ms to 1 ms for the lifetime of this object. This is the
+// slice 1 path. It is used when the high-resolution timer is not requested or cannot be created.
+class TickWaiter
 {
 public:
-  TimerResolutionGuard()
+  explicit TickWaiter(bool prefer_high_resolution)
   {
 #ifdef _WIN32
-    timeBeginPeriod(1U);
+    if (prefer_high_resolution) {
+      timer_ = CreateWaitableTimerExW(
+        nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    }
+    if (timer_ == nullptr) {
+      timeBeginPeriod(1U);
+      timer_resolution_raised_ = true;
+    }
+#else
+    (void)prefer_high_resolution;
 #endif
   }
-  ~TimerResolutionGuard()
+
+  ~TickWaiter()
   {
 #ifdef _WIN32
-    timeEndPeriod(1U);
+    if (timer_ != nullptr) {
+      CloseHandle(timer_);
+    }
+    if (timer_resolution_raised_) {
+      timeEndPeriod(1U);
+    }
 #endif
   }
-  TimerResolutionGuard(const TimerResolutionGuard &) = delete;
-  TimerResolutionGuard & operator=(const TimerResolutionGuard &) = delete;
+
+  TickWaiter(const TickWaiter &) = delete;
+  TickWaiter & operator=(const TickWaiter &) = delete;
+
+  const char * mechanism() const
+  {
+#ifdef _WIN32
+    if (timer_ != nullptr) {
+      return "high_resolution_waitable_timer";
+    }
+    return "sleep_until_timeBeginPeriod_1ms";
+#else
+    return "sleep_until";
+#endif
+  }
+
+  void wait_until(Clock::time_point target) const
+  {
+#ifdef _WIN32
+    if (timer_ != nullptr) {
+      while (Clock::now() < target) {
+        const std::int64_t remaining_100ns =
+          std::chrono::duration_cast<std::chrono::nanoseconds>(target - Clock::now()).count() / 100;
+        LARGE_INTEGER due;
+        due.QuadPart = -(remaining_100ns > 0 ? remaining_100ns : 1);
+        if (!SetWaitableTimer(timer_, &due, 0, nullptr, nullptr, FALSE)) {
+          std::this_thread::sleep_until(target);
+          return;
+        }
+        WaitForSingleObject(timer_, INFINITE);
+      }
+      return;
+    }
+#endif
+    std::this_thread::sleep_until(target);
+  }
+
+private:
+#ifdef _WIN32
+  HANDLE timer_ = nullptr;
+  bool timer_resolution_raised_ = false;
+#endif
 };
 
 }  // namespace
@@ -62,6 +130,7 @@ BridgeNode::BridgeNode(const rclcpp::NodeOptions & options)
   reference_frame_(declare_parameter<std::string>("reference_frame", "srtra_world")),
   mesh_node_count_(0U),
   wait_for_subscribers_(declare_parameter<bool>("wait_for_subscribers", true)),
+  prefer_high_resolution_(false),
   late_ticks_(0U)
 {
   if (rate_hz_ < kMinRateHz || rate_hz_ > kMaxRateHz) {
@@ -77,6 +146,15 @@ BridgeNode::BridgeNode(const rclcpp::NodeOptions & options)
   mesh_node_count_ = static_cast<std::uint32_t>(node_count);
   period_ns_ = kNanosPerSecond / rate_hz_;
 
+  const std::string timer_mode = declare_parameter<std::string>("timer_mode", "high_resolution");
+  if (timer_mode == "high_resolution") {
+    prefer_high_resolution_ = true;
+  } else if (timer_mode == "sleep") {
+    prefer_high_resolution_ = false;
+  } else {
+    throw std::invalid_argument("timer_mode must be high_resolution or sleep");
+  }
+
   const rclcpp::QoS qos = rclcpp::QoS(rclcpp::KeepLast(kQueueDepth)).reliable();
   pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(kTopicToolTipPose, qos);
   wrench_pub_ = create_publisher<geometry_msgs::msg::WrenchStamped>(kTopicToolWrench, qos);
@@ -90,9 +168,11 @@ BridgeNode::BridgeNode(const rclcpp::NodeOptions & options)
   mesh_msg_.mode_coefficients.assign(kModeCount, 0.0F);
 
   RCLCPP_INFO(
-    get_logger(), "bridge configured: rate_hz=%lld duration_s=%lld reference_frame=%s mesh_node_count=%u",
+    get_logger(),
+    "bridge configured: rate_hz=%lld duration_s=%lld reference_frame=%s mesh_node_count=%u "
+    "timer_mode=%s",
     static_cast<long long>(rate_hz_), static_cast<long long>(duration_s_), reference_frame_.c_str(),
-    mesh_node_count_);
+    mesh_node_count_, timer_mode.c_str());
 }
 
 void BridgeNode::fill_tick(std::uint64_t tick, const builtin_interfaces::msg::Time & stamp)
@@ -135,7 +215,6 @@ void BridgeNode::publish_tick()
 
 void BridgeNode::wait_for_matched_subscribers()
 {
-  using Clock = std::chrono::steady_clock;
   const Clock::time_point deadline = Clock::now() + kSubscriberWaitLimit;
   while (rclcpp::ok() &&
     (pose_pub_->get_subscription_count() == 0U || wrench_pub_->get_subscription_count() == 0U ||
@@ -151,14 +230,15 @@ void BridgeNode::wait_for_matched_subscribers()
 
 std::uint64_t BridgeNode::run()
 {
-  using Clock = std::chrono::steady_clock;
-  const TimerResolutionGuard timer_guard;
   const std::chrono::nanoseconds period(period_ns_);
   const std::chrono::nanoseconds limit(static_cast<std::int64_t>(duration_s_) * kNanosPerSecond);
 
   if (wait_for_subscribers_) {
     wait_for_matched_subscribers();
   }
+
+  const TickWaiter waiter(prefer_high_resolution_);
+  RCLCPP_INFO(get_logger(), "tick timer mechanism: %s", waiter.mechanism());
 
   const Clock::time_point start = Clock::now();
   Clock::time_point next = start;
@@ -168,7 +248,7 @@ std::uint64_t BridgeNode::run()
     if (duration_s_ > 0 && (next - start) >= limit) {
       break;
     }
-    std::this_thread::sleep_until(next);
+    waiter.wait_until(next);
     if (!rclcpp::ok()) {
       break;
     }
@@ -188,9 +268,10 @@ std::uint64_t BridgeNode::run()
   const double elapsed_s =
     std::chrono::duration<double>(Clock::now() - start).count();
   RCLCPP_INFO(
-    get_logger(), "publish loop finished: ticks=%llu late_ticks=%llu elapsed_s=%.3f",
+    get_logger(),
+    "publish loop finished: ticks=%llu late_ticks=%llu elapsed_s=%.3f timer=%s",
     static_cast<unsigned long long>(tick), static_cast<unsigned long long>(late_ticks_),
-    elapsed_s);
+    elapsed_s, waiter.mechanism());
   return tick;
 }
 

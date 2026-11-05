@@ -138,3 +138,7 @@ Open items for slice 2:
 * `sim/SOUP.md`: add the colcon 0.21.3 and ninja 1.13.2 pins and the setuptools 84.2.1 to 79.0.1 move to the ROS 2 row (owner of that file).
 * Root `CMakeLists.txt`: the `SRTA_BUILD_BRIDGE` wiring still points at `add_subdirectory(sim/bridge)`. Decide whether the root option should call `build.ps1` or be removed. Not changed in this slice.
 * `DEVELOPMENT_PLAN.md` task 2.4 status: not edited (owned by another builder).
+
+## Correction (added in slice 2a, `SNDEV/docs/impl-2026-11-05-task24-slice2a-timing.md`)
+
+The "Interpretation" bullet above attributes the 16 ms receive-side arrival steps to rclpy executor batching. That attribution is wrong. The slice 1 subscriber stamped arrivals with `time.monotonic_ns()`, which uses `GetTickCount64()` with a 15.625 ms resolution on this Windows build. Stamping with `time.perf_counter_ns()` removed the steps with the same executor, and the late-tick numbers in this log (787 of 30000 at 500 Hz, sleep path) are unaffected by this correction. The 787 late ticks are the node's timer path, and the slice 2a log records the high-resolution timer result (0 of 30000 at 500 Hz, 60 s).

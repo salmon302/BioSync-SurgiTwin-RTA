@@ -15,7 +15,9 @@
 param(
     [string]$Rates = '100,500',
     [int]$Duration = 60,
-    [string]$LogDir = ''
+    [string]$LogDir = '',
+    [ValidateSet('high_resolution', 'sleep')][string]$TimerMode = 'high_resolution',
+    [ValidateSet('poll', 'wait')][string]$Spin = 'wait'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,7 +42,7 @@ $env:RMW_IMPLEMENTATION = 'rmw_fastrtps_cpp'
 $rateList = @($Rates -split ',' | ForEach-Object { [int]$_.Trim() })
 foreach ($rate in $rateList) {
     $stamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHHmmssZ')
-    $tag = "bridge-smoke-$($rate)hz-$($Duration)s-$stamp"
+    $tag = "bridge-smoke-$($rate)hz-$($Duration)s-timer-$TimerMode-spin-$Spin-$stamp"
     $json = Join-Path $LogDir "$tag.json"
     $subOut = Join-Path $LogDir "$tag-subscriber.txt"
     $subErr = Join-Path $LogDir "$tag-subscriber-stderr.txt"
@@ -49,7 +51,8 @@ foreach ($rate in $rateList) {
 
     $ready = Join-Path $LogDir "$tag-ready.flag"
     $subArgs = @('run', '--manifest-path', $manifest, '--', 'python', $measure,
-        '--rate', "$rate", '--duration', "$Duration", '--out', $json, '--ready-file', $ready)
+        '--rate', "$rate", '--duration', "$Duration", '--out', $json, '--ready-file', $ready,
+        '--spin', $Spin)
     $sub = Start-Process -FilePath $pixi -ArgumentList $subArgs -NoNewWindow -PassThru `
         -RedirectStandardOutput $subOut -RedirectStandardError $subErr
 
@@ -62,7 +65,7 @@ foreach ($rate in $rateList) {
 
     # Native stderr carries the rclcpp log lines. Continue avoids treating them as errors.
     $ErrorActionPreference = 'Continue'
-    & $pixi run --manifest-path $manifest -- $bridgeExe --ros-args -p "rate_hz:=$rate" -p "duration_s:=$Duration" > $nodeOut 2> $nodeErr
+    & $pixi run --manifest-path $manifest -- $bridgeExe --ros-args -p "rate_hz:=$rate" -p "duration_s:=$Duration" -p "timer_mode:=$TimerMode" > $nodeOut 2> $nodeErr
     $nodeExit = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
 

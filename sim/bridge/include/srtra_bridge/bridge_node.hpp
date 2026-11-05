@@ -45,6 +45,7 @@ private:
   std::string reference_frame_;
   std::uint32_t mesh_node_count_;
   bool wait_for_subscribers_;
+  bool prefer_high_resolution_;
 
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
   rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_pub_;

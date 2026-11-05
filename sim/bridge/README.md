@@ -61,6 +61,7 @@ Node parameters (`--ros-args -p name:=value`):
 * `reference_frame` (string, default `srtra_world`)
 * `mesh_node_count` (int, default 4096)
 * `wait_for_subscribers` (bool, default true): the tick schedule starts after each publisher has a matched subscription (up to 30 s).
+* `timer_mode` (string, default `high_resolution`): `high_resolution` waits on a high-resolution waitable timer (`CreateWaitableTimerExW` with `CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`, Windows 10 1803 or later). If the timer cannot be created, the node falls back to `sleep_until` with `timeBeginPeriod(1)`. `sleep` forces the fallback path (slice 1 behavior, kept for comparison). The mechanism that took effect is logged at start and at exit.
 
 Data source (slice 1): deterministic synthetic trajectories. Each value is a function of the tick index, so two runs at the same rate produce the same sample values. Slice 2 replaces the source with SOFA tool-tip and wrench outputs.
 
@@ -72,21 +73,23 @@ Run the 60 second smoke pair (100 Hz and 500 Hz) from the repository root:
 powershell -NoProfile -ExecutionPolicy Bypass -File sim\bridge\tools\run_smoke.ps1
 ```
 
-Options: `-Rates "100,500"` (comma-separated string), `-Duration 60` (seconds), `-LogDir <path>`. The script writes, per rate, a JSON record `bridge-smoke-<rate>hz-<duration>s-<UTC>.json` and transcripts (`-subscriber.txt`, `-node.txt`, and their stderr files) to `SNDEV/logs/`.
+Options: `-Rates "100,500"` (comma-separated string), `-Duration 60` (seconds), `-LogDir <path>`, `-TimerMode high_resolution|sleep` (node timer), `-Spin wait|poll` (subscriber executor loop). The script writes, per rate, a JSON record `bridge-smoke-<rate>hz-<duration>s-timer-<mode>-spin-<spin>-<UTC>.json` and transcripts to `SNDEV/logs/`.
 
-The subscriber (`tools/measure_rate.py`) runs in the pixi CPython 3.12.16 interpreter. It records arrival times per message, counts ticks where all three streams are present (matched by `header.stamp`), counts mesh tick-index gaps and duplicates, and reports:
+The subscriber (`tools/measure_rate.py`) runs in the pixi CPython 3.12.16 interpreter. Arrival times are taken with `time.perf_counter_ns()` at callback entry. `time.monotonic()` is not used for arrival times on Windows because it has a 15.625 ms resolution there (`GetTickCount64()`). For each topic, the JSON reports:
 
-* achieved mean rate over the wrench stream (count minus one, divided by wall time between first and last arrival)
-* arrival-interval statistics (mean, p50, p95, p99, min, max) at the subscriber
-* source-stamp interval statistics (from `header.stamp`)
-* missing complete ticks against `rate * duration`
+* arrival-interval statistics (mean, p50, p95, p99, min, max) from the subscriber clock
+* source-stamp interval statistics from `header.stamp` (node clock)
+* agreement: the mean difference as a fraction of the nominal period (tolerance 1 percent) and the p95 difference in ms (tolerance 1.0 ms). `passed` is true only when both hold.
+* per-topic message counts matched to source stamps
 
-Smoke results and the observed limitations are recorded in `SNDEV/docs/impl-2026-11-05-task24-slice1-bridge.md`.
+Also reported: ticks where all three streams are present (matched by `header.stamp`), mesh tick-index gaps and duplicates, and the achieved mean rate over the wrench stream.
+
+Smoke results, the slice 2a timing runs, and the observed limitations are recorded in `SNDEV/docs/impl-2026-11-05-task24-slice1-bridge.md` and `SNDEV/docs/impl-2026-11-05-task24-slice2a-timing.md`.
 
 ## Slice 2 plan (G2.4 gate)
 
 * Gate G2.4 (SRS): wrench publish rate of at least 500 Hz sustained for 10 minutes, measured at the ROS 2 subscriber, with pose and mesh deformation state present on every publish tick.
 * Run: `run_smoke.ps1 -Rates 500 -Duration 600` on a quiet host, with the same subscriber and node. Acceptance uses the subscriber JSON: achieved rate, complete ticks equal to the expected count, zero mesh tick-index gaps.
 * Source data: replace the synthetic trajectories with SOFA tool-tip and wrench outputs, and a modal reduction from the SOFA nodal state to `mode_coefficients` (FR-MS-002).
-* Timing: the node reports late ticks (slice 1 saw 787 of 30000 at 500 Hz). Slice 2 evaluates a high-resolution waitable timer in place of the 1 ms `timeBeginPeriod` schedule, and records the result.
+* Timing: the node reports late ticks. Slice 2a moved the default to the high-resolution waitable timer, which gave 0 late ticks in the 60 s verification at 500 Hz (the slice 1 path gave 636 to 787). The 600 s run must repeat the late-tick count.
 * Test configuration record: the subscriber (`tools/measure_rate.py`) runs under CPython 3.12.16 in `env/ros2-jazzy`. The qualification driver runs under `.venv-qual311` (CPython 3.11.9) and parses the JSON captures in `SNDEV/logs/`. The two interpreters are separate. The record names both and the pixi lock revision.

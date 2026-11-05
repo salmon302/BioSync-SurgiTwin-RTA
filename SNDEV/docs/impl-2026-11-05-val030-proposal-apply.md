@@ -34,4 +34,36 @@ Pre-draft checks, run on 2026-11-05 against the working tree:
 * Fact check of the dataset claims against the task 2.1 log: TAIR is NIfTI CTA and MRA with no organ or tumor labels, 70 GB, CC BY 4.0, anatomical models not released (log items 4 and 5). HCC_001 is DICOM CT with SEG objects, CC BY 4.0, and the CT zip (17,780,801 bytes) and SEG zip (36,327 bytes) carry the checksums recorded in the log. Result: PASS.
 * The TAIR page metadata lists "Created" and "Last update" as November 13, 2026, after the retrieval date. Recorded as an unverified metadata note in the proposal (Section 4). Result: recorded.
 
-Commit A verification (docs only, no code gates apply): banned-word and dash scan on the two new files, and the proposal's Section 3 clause compared with the exact target text. Result is recorded in the commit B notes below.
+Commit A verification (docs only, no code gates apply): banned-word and dash scan on the two new files, run with the AGENTS.md word list, the em and en dashes, and curly quotes. Result: PASS, no matches.
+
+Application (commit B, after commit A `51608bc`):
+
+* `SRS.md` line 39, Section 3.1 FR-MS-001: the example phrase `such as **Kitware TAIR**` is replaced with `such as the **TCIA HCC-TACE-Seg** set (patient HCC_001, expert liver, tumor, and vessel reference labels)`. Every other word of the bullet is unchanged, and the bullet keeps its list marker and bold formatting. Result: PASS (the diff shows that phrase only).
+* `SRS.md` line 4: Document Version is `1.4.0 (FR-MS-001 benchmark example restated per VAL-030 (TCIA HCC-TACE-Seg reference set); Major and Minor findings remain open)`. Result: PASS (grep).
+* `SRS.md` Section 6: the 1.4.0 row is appended after the 1.3.0 row, with date 2026-11-05 and author Seth Nenninger. Result: PASS. The file has no newline at end of file, as before, so the new row also ends without one.
+* `SRS.md` Section 5: no change. The extract has no FR-MS-001 row. Result: PASS.
+* Kitware TAIR in `SRS.md` now appears only in the 1.2.0 history row (historical text, unchanged) and in the 1.4.0 row, which names it as the replaced example. Result: PASS.
+* `vv/traceability/vtm.md` row FR-MS-001 (line 9): the Acceptance Metric cell names the expert SEG reference labels held out of pipeline inputs and the TCIA HCC-TACE-Seg HCC_001 series, and notes VAL-030 and SRS v1.4.0. The row's other cells and every other row are unchanged. Result: PASS (the diff shows one changed line).
+* `DEVELOPMENT_PLAN.md` header: Version is `2.2 (draft)`. Result: PASS.
+* `DEVELOPMENT_PLAN.md` Status line: the v1.4.0 sentence is inserted immediately before `No commercial licenses are used in development`. Result: PASS.
+* `DEVELOPMENT_PLAN.md` gate G2.1 Acceptance Metric: `from the TCIA HCC-TACE-Seg HCC_001 series (VAL-030)` and `overlap with the expert SEG reference labels held out of pipeline inputs` replace the two named phrases, and nothing else in the cell changes. Result: PASS.
+* `DEVELOPMENT_PLAN.md` task 2.1 Est. cell: the clause now reads `the VAL-030 provenance flag and label-holdout bookkeeping (VAL-030 applied in SRS v1.4.0)`. Result: PASS.
+* `DEVELOPMENT_PLAN.md` Section 6.3: the VAL-030 row is added after the VAL-029 row, with the Resolution and Residual plan action text from the proposal. Result: PASS.
+
+Not changed, recorded as open:
+
+* `DEVELOPMENT_PLAN.md` gate G2.1 Status cell still reads `the reference dataset choice is open (VAL-030)`. The brief did not list this cell, so it is left as written and is rewritten when slice 2 records status.
+* `sim/segmentation/README.md` line 54 still lists the TAIR dataset decision as open. It is outside this change set's file scope and is updated in slice 2.
+* The task 2.1 slice-1 log is not edited (overwrite policy, AGENTS.md Section 6).
+
+Verification summary:
+
+* `git diff --check` on the three edited files reports trailing whitespace on `DEVELOPMENT_PLAN.md` line 3 only. That is the two-space markdown line break on the Version line, which the header lines already use. Result: PASS with that note.
+* Style scan of the added lines in the diff (AGENTS.md word list, em and en dashes, curly quotes): no matches. Result: PASS. The scan covered added lines only, because the existing text in these files already contains terms such as "Dynamic SIL Testing".
+* Build, lint, typecheck, and test gates: not applicable. No code or configuration changed, and no gate in `DEVELOPMENT_PLAN.md` covers these documents.
+
+Scope and staging:
+
+* Commit B is path-scoped to `SRS.md`, `vv/traceability/vtm.md`, `DEVELOPMENT_PLAN.md`, and this log. This log is in commit B so its final notes are recorded in the repository. That goes one file beyond the brief's commit B list, and it is noted here.
+* The working tree holds uncommitted `sim/bridge/` edits and the task 24 log from the active builder. None are staged or changed by this work. `sim/` and `env/` were not touched.
+* Nothing was pushed.

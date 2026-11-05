@@ -17,7 +17,7 @@ One item, 3D Slicer, is free of charge and open source by its own description bu
 * Docker Desktop 25.0.3 with the `biosync-surgitwin-rta-postgres-1` container (`postgres:15`) healthy.
 * PowerShell as the shell.
 * Python 3.11.9 virtual environments `.venv-qual311` and `.venv-pq-load`.
-* WSL is not provisioned. Section 4 covers provisioning.
+* WSL is not provisioned. Section 4 is superseded by VAL-026 (SRS v1.2.0); ROS 2 provisioning is native on Windows through the RoboStack route in Section 4.
 
 These assumptions come from the preflight table in `SNDEV/docs/impl-2026-10-14-phase2-kickoff.md`. Disk and time figures are estimates unless a source is named. None of them was measured on this host.
 
@@ -195,9 +195,9 @@ Unblocks task 2.1 (DICOM ingestion and segmented meshes), and the segmentation i
 * Preview release: 5.13.0, built 2026-10-14. Not recommended as a pin.
 * Decision needed. SlicerROS2 tests against Slicer tags `v5.10.0` and `v5.12.0` only (Section 5). The download page lists 5.12.0 among older releases that it marks as unsupported (`https://download.slicer.org`).
 
-Recommended: pin 5.12.0 for both task 2.1 (Windows installer) and task 2.4 (source build in WSL2), so the SOUP inventory holds one Slicer entry. Confirm that a Windows 5.12.0 package exists in the older-releases list before the pin.
+Recommended: pin 5.12.0 for both task 2.1 (Windows installer) and task 2.4 (source build in WSL2), so the SOUP inventory holds one Slicer entry. Superseded by VAL-027 Option B: task 2.4 builds no Slicer source, so the 5.12.0 source build in WSL2 is not required; the Windows 3D Slicer pin for task 2.1 is the one that remains. Confirm that a Windows 5.12.0 package exists in the older-releases list before the pin.
 
-Alternative: pin 5.12.4 for task 2.1 and build the bridge from the `v5.12.0` source tag. This keeps the stable release for segmentation, but it creates two Slicer pins and a second version to re-verify on every change.
+Alternative: pin 5.12.4 for task 2.1 and build the bridge from the `v5.12.0` source tag. This keeps the stable release for segmentation, but it creates two Slicer pins and a second version to re-verify on every change. Superseded by VAL-027 Option B: no bridge is built from a Slicer source tag, so this alternative is moot and 5.12.4 is the single Slicer pin.
 
 The steps below use the recommended pin. Substitute 5.12.4 if the alternative is chosen.
 
@@ -230,7 +230,9 @@ Verification (agents, later): a `PythonSlicer` script imports the reference DICO
 
 ## 4. ROS 2 Jazzy in WSL2 (Ubuntu 24.04)
 
-Unblocks task 2.4 (tool-tip pose, mesh deformation, and wrench publish over ROS 2) and task 2.8 (FMI-LS-BUS transport over the ROS 2 layer, and the three-node clock test in G2.6).
+Status: SUPERSEDED by VAL-026 (SRS v1.2.0, 2026-11-04). The WSL2 Ubuntu 24.04 route in this section is no longer the ROS 2 provisioning route. ROS 2 Jazzy is provisioned natively on Windows through pixi and the RoboStack `robostack-jazzy` conda channel (conda-forge only, no `defaults` channel) with `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`. The replacement route is procurement item 4 in Section 7, tracked as plan task 2.0.3. The steps below are kept as the 2026-10-14 record and are not to be followed.
+
+Historical unblock statement (2026-10-14): this section unblocked task 2.4 (tool-tip pose, mesh deformation, and wrench publish over ROS 2) and task 2.8 (FMI-LS-BUS transport over the ROS 2 layer, and the three-node clock test in G2.6). Under VAL-026 and VAL-028, tasks 2.4, 2.8, and the G2.6 three-node test run on the RoboStack route. Task 7.1 also moves to that route.
 
 ### Pin and platform
 
@@ -309,7 +311,9 @@ The `osrf/ros:jazzy-ros-base` image is the lighter alternative for headless runs
 
 ## 5. SlicerROS2
 
-Unblocks task 2.4 (the Slicer side of the ROS 2 bridge, and the wrench measurement at the ROS 2 subscriber in gate G2.4).
+Status: DROPPED by VAL-027 Option B (SRS v1.2.0, 2026-11-04). SlicerROS2 is not used, and procurement item 5 is removed. The direct Fast DDS bridge fallback described at the end of this section is now normative in plan task 2.4: a native ROS 2 bridge node in `sim/bridge/` publishes tool-tip pose, mesh deformation, and wrench topics. No deviation is recorded for that build. The analysis below is the 2026-10-14 record and is kept as history. Its WSL2 and Slicer source build steps are not to be followed.
+
+Historical unblock statement (2026-10-14): this section unblocked task 2.4 (the Slicer side of the ROS 2 bridge, and the wrench measurement at the ROS 2 subscriber in gate G2.4). The G2.4 wrench measurement point at the ROS 2 subscriber is unchanged.
 
 ### Verified facts (accessed 2026-10-14)
 
@@ -431,6 +435,8 @@ Gate G2.6 requires "FMUs pass FMI 3.0 import checks". This path defines the impo
 
 ### FMI-LS-BUS availability and fallback
 
+Decision status: CLOSED by VAL-028 (SRS v1.2.0, 2026-11-04). FMI-LS-BUS is removed from the design. The FMI-LS-BUS transport mismatch is resolved by that removal. The fallback recorded below is normative: task 2.8 implements FMI 3.0 scheduled-variable co-simulation over the pinned ROS 2 and Fast DDS layer (RoboStack route), with 1 ms clock-skew and message-jitter bounds measured in gate G2.6. The findings below are the 2026-10-14 record.
+
 * Spec status: FMI-LS-BUS v1.0.0 was released 2025-07-21. It covers the Physical Signal Abstraction for all bus types and the Network Abstraction for CAN, CAN FD, and CAN XL (`https://fmi-standard.org/news/2025-07-21-fmi-ls-bus-v1.0-release/`, accessed 2026-10-14). FlexRay and Ethernet are pre-release in v1.1.0-beta on the same page.
 * License: code is BSD-2-Clause and documentation is CC BY-SA 4.0 (`https://github.com/modelica/fmi-ls-bus`, accessed 2026-10-14).
 * Transport: the standard emulates bus traffic with FMI 3.0 binary variables that model automotive networks. Neither the repository nor the release page defines a DDS or Fast DDS transport. The plan's wording "FMI-LS-BUS 1.0 over Fast DDS" does not match the published spec.
@@ -442,16 +448,16 @@ Fallback for task 2.8: implement scheduled-variable co-simulation directly over 
 
 ## 7. Procurement sequence
 
-Order follows the priority list. Item 4 must finish before item 5 starts, because the SlicerROS2 build runs in the WSL2 environment from item 4. The other items are independent.
+Order follows the priority list. Item 4 (RoboStack route, VAL-026) unblocks tasks 2.4 and 2.8. Item 5 (SlicerROS2) is DROPPED under VAL-027 Option B, so no item depends on item 4 for a Slicer build. The other items are independent.
 
 | Order | Item | Who | Disk (estimate) | Wall clock (estimate unless sourced) | Done when | Clears | Status (2026-10-14) |
 |:------|:-----|:----|:----------------|:-------------------------------------|:----------|:-------|:--------------------|
 | 1 | Pulse engine: copy `.pulse/`, then build `biosync-pulse` | Human: steps 1 to 6 in Section 1. Agents: import check, IQ-4, OQ-16, fail-closed OQ, 600 s heartbeat run, SOUP and migration-map rows | About 20 GB Docker data | 30 to 90 min cold build (Gateway log estimate) | Build log contains `ENGINE INIT OK`; image `biosync-pulse` exists | Task 2.6 real-engine run; FR-MS-006 heartbeat evidence in G2.5; IQ-4; OQ-16 | DONE. `.pulse/` copied and `biosync-pulse` built; `import pulse OK`; engine suites 11 passed, 1 skipped. Heartbeat run `vtm-600s` FAILED: 239.357 ms against the 50 ms bound (stub 73.225 ms). Diagnosis in progress. |
 | 2 | SOFA v26.06.00 installer | Human: download, checksum, install, `runSofa`. Agents: CMake find check after task 2.2, SOUP entry | About 2 GB | About 15 min | `runSofa` opens a bundled scene and steps | Task 2.2; task 2.3 tooling (contact and cutting effort is still open); mechanical FMU of task 2.7 | DONE. Installed at `C:\Users\salmo\SOFA\v26.06.00`; `runSofa.exe` present. Bundled scene run recorded 2026-10-15: `runSofa.exe -g batch` stepped the bundled `TetrahedronHyperelasticityFEMForceField.scn` 50 steps (evidence in `SNDEV/docs/impl-2026-10-15-sofa-scene-slice1.md`). |
-| 3 | 3D Slicer 5.12.0 (recommended) installer | Human: download, SHA512 check, DICOM load, labelmap export. Agents: `PythonSlicer` segmentation test | About 2 GB | About 20 min | Slicer starts, DICOM study loads, labelmap file is written | Task 2.1; segmentation input for G2.1 | DONE with alternate pin. 5.12.4 installed at `I:\Library\3D Slicer 5.12.4` instead of the recommended 5.12.0; `Slicer.exe` present. DICOM load not yet recorded. The WSL2 bridge pins its own v5.12 source tag in item 5. |
-| 4 | WSL2 Ubuntu 24.04 and ROS 2 Jazzy | Human: WSL install, ROS 2 base install, RMW setting, round-trip check. Agents: Fast DDS version record in SOUP | About 10 GB | 30 to 60 min (estimate) | Echo receives published messages at about 10 Hz; latency recorded | Task 2.4 ROS 2 transport; task 2.8 transport; three-node test in G2.6 | PENDING, user decision on 2026-10-14. Deferred for disk space and install time. No Ubuntu 24.04 WSL2 distribution is present. |
-| 5 | SlicerROS2 in WSL2 | Human: Slicer v5.12.0 source build, colcon build, launch check. Agents: bridge code in `sim/bridge/`, wrench-rate test in G2.4 | About 40 GB | A few hours (SlicerROS2 Getting Started page) | `ros2 run slicer_ros2_module slicer` opens with the ROS category visible | Task 2.4 bridge; G2.4 wrench measurement at the ROS 2 subscriber | PENDING, depends on item 4 (user decision on 2026-10-14). |
-| 6 | FMI tooling: FMPy, Reference FMUs, fmi4c clone | Human: `.venv-fmi`, Reference FMU build, fmi4c commit. Agents: FMU packaging, import checks, master import library, FMI-LS-BUS fallback record | About 1 GB | About 30 min | `fmpy --help` runs; Reference FMUs build; fmi4c commit recorded | Task 2.7; G2.6 import checks; task 2.8 master import library; FMI-LS-BUS fallback decision | PARTIAL. FMPy 0.3.32 installed in the host Python 3.14 user site, not a repository venv. Reference FMU build and fmi4c clone not reported. |
+| 3 | 3D Slicer 5.12.0 (recommended) installer | Human: download, SHA512 check, DICOM load, labelmap export. Agents: `PythonSlicer` segmentation test | About 2 GB | About 20 min | Slicer starts, DICOM study loads, labelmap file is written | Task 2.1; segmentation input for G2.1 | DONE with alternate pin. 5.12.4 installed at `I:\Library\3D Slicer 5.12.4` instead of the recommended 5.12.0; `Slicer.exe` present. DICOM load not yet recorded. The former WSL2 bridge pin for a v5.12 source tag in item 5 is removed under VAL-027 Option B. |
+| 4 | ROS 2 Jazzy natively on Windows via pixi and the RoboStack `robostack-jazzy` conda channel (conda-forge only, no `defaults` channel) with `rmw_fastrtps_cpp` | Human: pixi install of the RoboStack environment, RMW setting, pub/sub round-trip check. Agents: lockfile (`pixi.lock` or conda explicit spec) committed beside the `sim/SOUP.md` row, Fast DDS version record in SOUP | About 10 GB (estimate) | 30 to 60 min (estimate) | Resolved environment with the lockfile committed beside the `sim/SOUP.md` row; pub/sub round trip over Fast DDS recorded | Task 2.4 ROS 2 transport; task 2.8 transport; three-node test in G2.6 | IN PROGRESS. Plan task 2.0.3 runs the resolution (VAL-026). Former 2026-10-14 entry, superseded: WSL2 Ubuntu 24.04 route, PENDING, user decision on 2026-10-14. |
+| 5 | SlicerROS2 in WSL2 (dropped) | None. Former steps: Slicer v5.12.0 source build, colcon build, launch check | None. Former estimate: about 40 GB | None. Former estimate: a few hours | None | None. Former clear: task 2.4 bridge, G2.4 wrench measurement at the ROS 2 subscriber. The bridge is now the native Fast DDS node in `sim/bridge/` (task 2.4) | DROPPED per VAL-027 Option B (SRS v1.2.0, 2026-11-04). Former 2026-10-14 status, superseded: PENDING, depends on item 4. |
+| 6 | FMI tooling: FMPy, Reference FMUs, fmi4c clone | Human: `.venv-fmi`, Reference FMU build, fmi4c commit. Agents: FMU packaging, import checks, master import library, FMI-LS-BUS fallback record | About 1 GB | About 30 min | `fmpy --help` runs; Reference FMUs build; fmi4c commit recorded | Task 2.7; G2.6 import checks; task 2.8 master import library; FMI-LS-BUS fallback decision (cleared by VAL-028: FMI-LS-BUS removed, scheduled-variable co-simulation over the ROS 2 and Fast DDS layer is normative) | PARTIAL. FMPy 0.3.32 installed in the host Python 3.14 user site, not a repository venv. Reference FMU build and fmi4c clone not reported. |
 
 ## Remaining board after this guide
 

@@ -8,7 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(SRTA_BUILD_RTA "Build the Run-Time Assurance (Simplex) tier" ON)
 option(SRTA_BUILD_SOFA "Build the SOFA FEM scene stubs" OFF)
 option(SRTA_BUILD_FMI "Build the FMI 3.0 co-simulation stubs" OFF)
-option(SRTA_BUILD_BRIDGE "Build the SlicerROS2 / Fast DDS bridge stubs" OFF)
+option(SRTA_BUILD_BRIDGE "Build the ROS 2 / Fast DDS bridge stubs" OFF)
 
 enable_testing()
 

@@ -4,7 +4,7 @@ SurgiTwin-RTA is a closed-loop surgical soft-tissue digital twin and software-in
 
 ## Tiers
 
-* M&S tier: `sim/` (SOFA FEM, Pulse physiology, FMI 3.0, SlicerROS2 bridge)
+* M&S tier: `sim/` (SOFA FEM, Pulse physiology, FMI 3.0, ROS 2 bridge node)
 * RTA tier: `rta/` (C++17 Simplex switch, safety envelope, timed automata)
 * Informatics tier: `middleware/` (FastAPI gateway, compliance API), `database/` (PostgreSQL 15+ WORM store), `edge/` (ESP32-S3 bridge), `frontend/` (React and WebGL client)
 * V&V tier: `vv/` (ASAM XIL harness, traceability engine, IQ/OQ/PQ tests)

@@ -1,0 +1,26 @@
+[workspace]
+name = "surgitwin-ros2-jazzy"
+description = "ROS 2 Jazzy verification environment for SurgiTwin-RTA (VAL-026, rmw_fastrtps_cpp)"
+# The defaults channel is excluded on purpose: RoboStack guide (https://robostack.github.io/conda.html) warns about the Anaconda ToS.
+channels = ["conda-forge", "robostack-jazzy"]
+platforms = ["win-64"]
+
+[dependencies]
+python = "==3.12.16"
+ros-jazzy-ros-base = "==0.11.0"
+ros-jazzy-rmw-fastrtps-cpp = "==8.4.4"
+
+[activation.env]
+RMW_IMPLEMENTATION = "rmw_fastrtps_cpp"
+
+[tasks.ros2-env-check]
+cmd = "ros2 doctor --report"
+env = { RMW_IMPLEMENTATION = "rmw_fastrtps_cpp" }
+
+[tasks.pubsub-talker]
+cmd = "ros2 topic pub --rate 2 /srtra/smoke std_msgs/msg/String \"{data: 'srtra-smoke'}\""
+env = { RMW_IMPLEMENTATION = "rmw_fastrtps_cpp" }
+
+[tasks.pubsub-listener]
+cmd = "ros2 topic echo /srtra/smoke std_msgs/msg/String --once"
+env = { RMW_IMPLEMENTATION = "rmw_fastrtps_cpp" }

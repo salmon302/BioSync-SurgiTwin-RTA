@@ -27,6 +27,9 @@ cmake-build-*/
 # External Pulse physiology engine source (Dockerfile.pulse prerequisite, not vendored here)
 .pulse/
 
+# pixi local environments (ROS 2 Jazzy environment under env/ros2-jazzy/, task 2.0.3)
+.pixi/
+
 # Runtime captures (keep the placeholder)
 SNDEV/logs/*
 !SNDEV/logs/.gitkeep

@@ -1,29 +1,37 @@
 # SPDX-License-Identifier: MIT
-# Metadata: Author Seth Nenninger (Builder_Int34 Agent); Contribution: plan task 2.1 slice 1;
-# Log: SNDEV/docs/impl-2026-11-05-task21-slice1-segmentation.md
-"""Headless 3D Slicer segmentation pipeline (FR-MS-001 slice 1).
+# Metadata: Author Seth Nenninger (Builder_Int34 Agent); Contribution: plan task 2.1 slices 1 and 2;
+# Log: SNDEV/docs/impl-2026-11-05-task21-slice1-segmentation.md, SNDEV/docs/impl-2026-11-05-task21-slice2-dice.md
+"""Headless 3D Slicer segmentation pipeline (FR-MS-001, plan task 2.1).
 
 Run through sim/segmentation/run.ps1. Inputs come from environment variables
 set by run.ps1: SURGITWIN_DICOM_DIR, SURGITWIN_SERIES_UID, SURGITWIN_DATASET_ID,
 SURGITWIN_OUTPUT_ROOT, SURGITWIN_SCRIPT, SURGITWIN_SOURCE_NOTE.
 
-Segments are smoke-test outputs. They are not G2.1 reference labels.
+Holdout: the input folder must contain CT only. The script refuses any DICOM object with
+Modality SEG, and it never opens the output/<dataset-id>/reference/ folder. The expert SEG
+reference labels are read only by export_reference_labels.py (writes reference/) and
+evaluate_g21.py (reads reference/).
+
+Segments are the output of a scripted chain on CT inputs. The tumor segment is a
+hypoattenuating-region attempt, not a validated lesion detector.
 """
 
 import datetime
+import glob
 import hashlib
 import json
 import os
 
 import numpy as np
+import pydicom
 import SimpleITK as sitk
 import slicer
 import vtk
 from DICOMLib import DICOMUtils
 
-ORGAN = "parenchyma_liver_smoke"
-LESION = "lesion_synthetic"
-VESSEL = "vascular_keepout_contrast"
+ORGAN = "parenchyma_liver"
+TUMOR = "tumor_hypoattenuating"
+VESSEL = "vascular_keepout_bone_excluded"
 
 # ROI boxes as fractions of the volume (x = columns, y = rows); z is unrestricted.
 # Chosen from the mid-axial slice (pixel coordinates 512 x 512): liver x 60-230, y 90-330;
@@ -35,7 +43,11 @@ ORGAN_THRESHOLD = (40, 200)
 VESSEL_THRESHOLD = (150, 300)
 SMOOTH_KERNEL_MM = 3
 VESSEL_MARGIN_MM = 2
-LESION_RADIUS_MM = 10
+TUMOR_INTERIOR_MM = 10
+TUMOR_SMOOTH_SIGMA_MM = 1.0
+TUMOR_DELTA_HU = 30
+BONE_HU = 250
+BONE_MARGIN_MM = 3
 
 
 def utc_now():
@@ -48,6 +60,13 @@ def sha256_file(path):
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def assert_ct_only_input(dicom_dir):
+    for f in glob.glob(os.path.join(dicom_dir, "*.dcm")):
+        ds = pydicom.dcmread(f, stop_before_pixels=True)
+        if str(getattr(ds, "Modality", "")) == "SEG":
+            raise RuntimeError("Holdout violation: SEG object in pipeline input " + f)
 
 
 def roi_mask(shape_zyx, roi):
@@ -115,6 +134,31 @@ def sitk_dilate(array_zyx, mm, spacing_xyz):
     return sitk.GetArrayFromImage(out).astype(np.uint8)
 
 
+def sitk_erode(array_zyx, mm, spacing_xyz):
+    img = sitk.GetImageFromArray(array_zyx.astype(np.uint8))
+    out = sitk.BinaryErode(img, voxel_radius(mm, spacing_xyz))
+    return sitk.GetArrayFromImage(out).astype(np.uint8)
+
+
+def sitk_fill_holes(array_zyx):
+    img = sitk.GetImageFromArray(array_zyx.astype(np.uint8))
+    out = sitk.BinaryFillhole(img)
+    return sitk.GetArrayFromImage(out).astype(np.uint8)
+
+
+def sitk_open_1vox(array_zyx):
+    img = sitk.GetImageFromArray(array_zyx.astype(np.uint8))
+    out = sitk.BinaryMorphologicalOpening(img, [1, 1, 1])
+    return sitk.GetArrayFromImage(out).astype(np.uint8)
+
+
+def sitk_smooth_hu(hu_zyx, sigma_mm, spacing_xyz):
+    img = sitk.GetImageFromArray(hu_zyx.astype(np.float32))
+    img.SetSpacing(spacing_xyz)
+    out = sitk.SmoothingRecursiveGaussian(img, sigma_mm)
+    return sitk.GetArrayFromImage(out)
+
+
 def write_array_to_segment(array_zyx, seg_node, seg_id, volume):
     slicer.util.updateSegmentBinaryLabelmapFromArray(array_zyx.astype(np.uint8), seg_node, seg_id, volume)
 
@@ -160,6 +204,8 @@ def main():
     script_path = os.environ["SURGITWIN_SCRIPT"]
     source_note = os.environ.get("SURGITWIN_SOURCE_NOTE", "")
 
+    assert_ct_only_input(dicom_dir)
+
     out_dir = os.path.join(out_root, dataset_id)
     os.makedirs(out_dir, exist_ok=True)
     operator = {
@@ -168,6 +214,7 @@ def main():
         "slicer_version": slicer.app.applicationVersion,
         "slicer_revision": slicer.app.repositoryRevision,
     }
+    sitk_version = sitk.Version().VersionString()
 
     with DICOMUtils.TemporaryDICOMDatabase() as db:
         DICOMUtils.importDicom(dicom_dir, db)
@@ -180,7 +227,9 @@ def main():
     vol = candidates[0]
     excluded = [{"name": v.GetName(), "reason": "fewer slices than selected acquisition"} for v in candidates[1:]]
     arr = slicer.util.arrayFromVolume(vol)
+    hu = arr.astype(np.float32)
     shape = arr.shape
+    spacing = vol.GetSpacing()
 
     seg_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode", "SurgiTwin_" + dataset_id)
     seg_node.CreateDefaultDisplayNodes()
@@ -193,12 +242,14 @@ def main():
     widget.setSourceVolumeNode(vol)
 
     segs = {}
-    for name in (ORGAN, LESION, VESSEL):
+    for name in (ORGAN, TUMOR, VESSEL):
         seg_id = seg_node.GetSegmentation().AddEmptySegment("")
         seg_node.GetSegmentation().GetSegment(seg_id).SetName(name)
         segs[name] = seg_id
 
     chains = {name: [] for name in segs}
+
+    # Parenchyma: threshold, ROI clip, median smoothing, keep largest island.
     organ_id = segs[ORGAN]
     editor_node.SetSelectedSegmentID(organ_id)
     chains[ORGAN].append(apply_effect(widget, seg_node, organ_id, "Threshold",
@@ -207,46 +258,62 @@ def main():
     clipped = slicer.util.arrayFromSegmentBinaryLabelmap(seg_node, organ_id, vol) * organ_roi
     write_array_to_segment(clipped, seg_node, organ_id, vol)
     chains[ORGAN].append({"effect": "ROI_clip_numpy", "parameters": {"x_fraction": ORGAN_ROI["x"], "y_fraction": ORGAN_ROI["y"]}})
-    spacing = vol.GetSpacing()
     organ_arr = slicer.util.arrayFromSegmentBinaryLabelmap(seg_node, organ_id, vol)
     organ_arr = sitk_median(organ_arr, SMOOTH_KERNEL_MM, spacing)
     chains[ORGAN].append({"effect": "sitk.BinaryMedian", "parameters": {"kernel_mm": SMOOTH_KERNEL_MM,
-                          "radius_voxels_xyz": voxel_radius(SMOOTH_KERNEL_MM, spacing)}, "library": "SimpleITK " + sitk.Version().VersionString()})
+                          "radius_voxels_xyz": voxel_radius(SMOOTH_KERNEL_MM, spacing)}, "library": "SimpleITK " + sitk_version})
     organ_arr = sitk_keep_largest(organ_arr)
-    chains[ORGAN].append({"effect": "sitk.ConnectedComponent+RelabelComponent keep largest", "parameters": {}, "library": "SimpleITK " + sitk.Version().VersionString()})
+    chains[ORGAN].append({"effect": "sitk.ConnectedComponent+RelabelComponent keep largest", "parameters": {}, "library": "SimpleITK " + sitk_version})
     write_array_to_segment(organ_arr, seg_node, organ_id, vol)
-    coords = np.argwhere(organ_arr > 0)
-    centroid = coords.mean(axis=0) if len(coords) else np.array(shape) / 2.0
-    grid_z, grid_y, grid_x = np.indices(shape)
-    d_mm = np.sqrt(((grid_x - centroid[2]) * spacing[0]) ** 2 +
-                   ((grid_y - centroid[1]) * spacing[1]) ** 2 +
-                   ((grid_z - centroid[0]) * spacing[2]) ** 2)
-    lesion_arr = ((d_mm <= LESION_RADIUS_MM) & (organ_arr > 0)).astype(np.uint8)
-    lesion_id = segs[LESION]
-    write_array_to_segment(lesion_arr, seg_node, lesion_id, vol)
-    chains[LESION].append({
-        "effect": "synthetic_sphere_numpy",
-        "parameters": {
-            "seed_zyx_voxel": [round(float(c), 2) for c in centroid],
-            "seed_definition": "centroid of " + ORGAN + " mask after Islands",
-            "radius_mm": LESION_RADIUS_MM,
-            "clip_to": ORGAN,
-        },
-        "label": "synthetic, not a clinical lesion",
-    })
 
+    # Tumor attempt: hypoattenuating region inside the eroded parenchyma mask, relative to background liver.
+    tumor_id = segs[TUMOR]
+    liver_median = float(np.median(hu[organ_arr > 0]))
+    interior = sitk_erode(organ_arr, TUMOR_INTERIOR_MM, spacing)
+    smooth = sitk_smooth_hu(hu, TUMOR_SMOOTH_SIGMA_MM, spacing)
+    cand = ((smooth <= liver_median - TUMOR_DELTA_HU) & (interior > 0)).astype(np.uint8)
+    cand = sitk_open_1vox(cand)
+    tumor_arr = sitk_keep_largest(cand)
+    write_array_to_segment(tumor_arr, seg_node, tumor_id, vol)
+    chains[TUMOR].append({
+        "effect": "sitk.BinaryErode of parenchyma mask",
+        "parameters": {"radius_mm": TUMOR_INTERIOR_MM, "radius_voxels_xyz": voxel_radius(TUMOR_INTERIOR_MM, spacing)},
+        "library": "SimpleITK " + sitk_version,
+    })
+    chains[TUMOR].append({
+        "effect": "numpy background median and threshold on Gaussian-smoothed HU",
+        "parameters": {"background_median_HU_parenchyma": round(liver_median, 2), "delta_HU": TUMOR_DELTA_HU,
+                       "upper_bound_HU": round(liver_median - TUMOR_DELTA_HU, 2), "gaussian_sigma_mm": TUMOR_SMOOTH_SIGMA_MM},
+        "library": "SimpleITK " + sitk_version,
+    })
+    chains[TUMOR].append({"effect": "sitk.BinaryMorphologicalOpening", "parameters": {"radius_voxels": 1}, "library": "SimpleITK " + sitk_version})
+    chains[TUMOR].append({"effect": "sitk.ConnectedComponent+RelabelComponent keep largest", "parameters": {}, "library": "SimpleITK " + sitk_version})
+
+    # Vessel: threshold, ROI clip, vertebral and cortical bone exclusion, margin.
     vessel_id = segs[VESSEL]
     editor_node.SetSelectedSegmentID(vessel_id)
     chains[VESSEL].append(apply_effect(widget, seg_node, vessel_id, "Threshold",
                                        {"MinimumThreshold": VESSEL_THRESHOLD[0], "MaximumThreshold": VESSEL_THRESHOLD[1]}))
     vessel_roi = roi_mask(shape, VESSEL_ROI)
     vclip = slicer.util.arrayFromSegmentBinaryLabelmap(seg_node, vessel_id, vol) * vessel_roi
-    write_array_to_segment(vclip, seg_node, vessel_id, vol)
     chains[VESSEL].append({"effect": "ROI_clip_numpy", "parameters": {"x_fraction": VESSEL_ROI["x"], "y_fraction": VESSEL_ROI["y"]}})
+    bone_core = sitk_keep_largest((hu >= BONE_HU).astype(np.uint8))
+    bone_filled = sitk_fill_holes(bone_core)
+    bone_excl = sitk_dilate(bone_filled, BONE_MARGIN_MM, spacing)
+    chains[VESSEL].append({
+        "effect": "bone exclusion: HU >= BONE_HU, keep largest component, fill holes, dilate",
+        "parameters": {"bone_HU": BONE_HU, "dilate_mm": BONE_MARGIN_MM, "bone_core_voxels": int(bone_core.sum()),
+                       "exclusion_voxels": int(bone_excl.sum())},
+        "library": "SimpleITK " + sitk_version,
+    })
+    vclip = vclip * (1 - bone_excl)
+    write_array_to_segment(vclip, seg_node, vessel_id, vol)
     vdil = sitk_dilate(slicer.util.arrayFromSegmentBinaryLabelmap(seg_node, vessel_id, vol), VESSEL_MARGIN_MM, spacing)
+    vdil = vdil * (1 - bone_excl)
     write_array_to_segment(vdil, seg_node, vessel_id, vol)
     chains[VESSEL].append({"effect": "sitk.BinaryDilate", "parameters": {"margin_mm": VESSEL_MARGIN_MM,
-                           "radius_voxels_xyz": voxel_radius(VESSEL_MARGIN_MM, spacing)}, "library": "SimpleITK " + sitk.Version().VersionString()})
+                           "radius_voxels_xyz": voxel_radius(VESSEL_MARGIN_MM, spacing)}, "library": "SimpleITK " + sitk_version})
+    chains[VESSEL].append({"effect": "subtract bone exclusion after dilation", "parameters": {}, "library": "SimpleITK " + sitk_version})
 
     files = []
     segment_records = []
@@ -258,6 +325,7 @@ def main():
         "volume_shape_zyx": list(shape),
         "volume_spacing_mm": [round(float(s), 5) for s in vol.GetSpacing()],
         "excluded_acquisitions": excluded,
+        "inputs": "CT only (SEG refused by assert_ct_only_input)",
         "operator": operator,
     }
     stamp = utc_now()

@@ -43,3 +43,5 @@ Open items noted at application, not changed:
 * DEVELOPMENT_PLAN.md Section 6.3 heading and column header still read "Resolved by SRS v1.2.0" and "Resolution in SRS v1.2.0". The VAL-029 row reads "Resolved by SRS v1.3.0".
 * DEVELOPMENT_PLAN.md header lines 5 and 6 still read "Derived From: SRS.md v1.2.0" and the v1.2.0 status text. These lines were outside the approved edit list.
 * The 0.1 percent cap is kept at the owner value (no adjustment at application). The margin is 33 steps.
+
+Commit record: the application is commit 6ede4dd8afbfa9f89a7cb4f55b660738b7f00e5f (docs(srs,vv): apply approved VAL-029 FR-MS-002 metric restatement (v1.3.0)).

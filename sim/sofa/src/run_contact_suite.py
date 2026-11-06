@@ -102,6 +102,7 @@ CALIBRATION = {
     "contact_stiffness": 100.0,
     "contact_damping": 0.5,
     "contact_m": 0.0005,
+    "contact_force_cap_n": 1.0,
     "fracture_toughness_j_m2": 164.0,
     "cut_width_m": 0.001,
     "cut_min_depth_mm": 1.0,
@@ -137,6 +138,7 @@ def base_config():
         "cut_enabled": True,
         "cut_min_depth_mm": CALIBRATION["cut_min_depth_mm"],
         "cut_force_n": CALIBRATION["cut_force_n"],
+        "contact_force_cap_n": CALIBRATION["contact_force_cap_n"],
     }
 
 

@@ -203,7 +203,12 @@ def apply_cut(state, crossed, orient_sign, mu, lam):
     energy_after = float(neohookean_energy(new_state["rest"], new_state["pos"],
                                            new_state["tets"][neighbor[~crossed]], mu, lam).sum())
     ok, integrity = check_integrity(new_state, orient_sign)
+    total_before = float(neohookean_energy(state["rest"], state["pos"], tets[~crossed], mu, lam).sum())
+    total_after = float(neohookean_energy(new_state["rest"], new_state["pos"], new_state["tets"], mu, lam).sum())
     record = {
+        "total_energy_before_j": total_before,
+        "total_energy_after_j": total_after,
+        "total_energy_jump_j": total_after - total_before,
         "crossed_tetrahedra": int(crossed.sum()),
         "neighbor_tetrahedra": int(neighbor.sum()),
         "neighbor_nodes_reset": int(neighbor_nodes.sum()),

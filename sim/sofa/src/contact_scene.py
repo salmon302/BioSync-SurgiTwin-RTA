@@ -67,6 +67,8 @@ PLUGINS = [
 CUT_EXIT_CODE = 10
 CUT_SAMPLES = 9
 EXIT_HYSTERESIS_TICKS = 50
+EVIDENCE_LIMIT = 400
+EVIDENCE_FORCE_N = 1.0
 BRIDGE_HEADER = [
     "tick", "time_s", "pos_x", "pos_y", "pos_z",
     "quat_x", "quat_y", "quat_z", "quat_w",
@@ -286,6 +288,7 @@ class ContactController(Sofa.Core.Controller):
         self.k = float(cfg["contact_stiffness"])
         self.c = float(cfg["contact_damping"])
         self.margin = float(cfg["contact_m"])
+        self.force_cap = float(cfg["contact_force_cap_n"])
         self.puncture_k = float(cfg["puncture_k_perp"])
         self.anisotropy = float(cfg["puncture_anisotropy"])
         self.fiber = np.array(cfg["fiber_dir"], dtype=float)
@@ -319,6 +322,8 @@ class ContactController(Sofa.Core.Controller):
         self.missed_points = 0
         self.rows = []
         self.diag = []
+        self.evidence = []
+        self.culled_keys = set(tuple(sorted(int(v) for v in tri)) for tri in contact_tris)
         self.q = rotation_quat(np.array([0.0, 0.0, 1.0]), -self.d)
 
     def tool_pose(self, tick):
@@ -372,31 +377,55 @@ class ContactController(Sofa.Core.Controller):
             if full_hit:
                 self.full_swept_points += 1
             contacted = False
+            source = "none"
+            t = None
+            pen = 0.0
+            f_mag = 0.0
             if cand.any():
                 idx = np.nonzero(cand)[0]
                 t = int(idx[np.argmin(np.abs(sd[i, idx]))])
                 pen = max(self.margin - sd[i, t], 0.0)
+                source = "candidate"
             elif ray_inside(pts[i], full):
                 dist = point_triangle_distance(pts[i], tri_a, tri_b, tri_c, normals)
                 t = int(np.argmin(dist))
                 pen = self.margin + float(dist[t])
-            else:
-                t = None
-            if t is not None:
+                source = "fallback"
+            if t is not None and pen > 0.0:
                 n = normals[t]
                 vn = float(np.dot(velocity[i], n))
-                f_mag = self.k * pen - self.c * vn
-                if f_mag > 0.0:
-                    f = f_mag * n
-                    self.contact_force += f
-                    self.contact_torque += np.cross(pts[i] - tip, f)
-                    self.contact_points += 1
-                    weights = np.clip(bary[i, t], 0.0, None)
-                    weights = weights / weights.sum()
-                    self.contact_records.append((t, weights.tolist(), (-f).tolist()))
-                    contacted = True
+                f_mag = min(max(self.k * pen - self.c * vn, 0.0), self.force_cap)
+                f = f_mag * n
+                self.contact_force += f
+                self.contact_torque += np.cross(pts[i] - tip, f)
+                self.contact_points += 1
+                weights = np.clip(bary[i, t], 0.0, None)
+                weights = weights / weights.sum()
+                self.contact_records.append((t, weights.tolist(), (-f).tolist()))
+                contacted = True
             if full_hit and not contacted:
                 self.missed_points += 1
+            if len(self.evidence) < EVIDENCE_LIMIT and (
+                    (full_hit and not contacted) or f_mag > EVIDENCE_FORCE_N):
+                entry = {
+                    "tick": self.tick, "point": i, "kind": "missed" if (full_hit and not contacted) else "large_force",
+                    "source": source, "t": t, "pen_m": float(pen), "f_mag_n": float(f_mag),
+                    "sd_m": None if t is None else float(sd[i, t]),
+                    "tip": tip.tolist(), "point_pos": pts[i].tolist(),
+                    "face_nodes": None if t is None else self.contact_tris[t].tolist(),
+                    "face_pos": None if t is None else tris[t].tolist(),
+                    "face_in_culled": None if t is None else True,
+                    "full_hit_faces": [],
+                }
+                if full_hit:
+                    hit_idx = np.nonzero(segment_triangle_hits(self.prev_pts[i], pts[i], full[:, 0],
+                                                               full[:, 1], full[:, 2]))[0]
+                    for h in hit_idx[:8]:
+                        nodes = self.surface_full[h].tolist()
+                        entry["full_hit_faces"].append({
+                            "nodes": nodes, "in_culled": tuple(sorted(nodes)) in self.culled_keys,
+                            "positions": full[h].tolist()})
+                self.evidence.append(entry)
 
     def add_contact_reaction(self, forces):
         index_of = self.cmap["index_of"]
@@ -453,6 +482,22 @@ class ContactController(Sofa.Core.Controller):
                 self.depth = 0.0
         self.last_inside = inside
 
+        if inside and self.contact_points == 0 and len(self.evidence) < EVIDENCE_LIMIT:
+            full_tris = pos[self.surface_full]
+            fa, fb, fc = full_tris[:, 0], full_tris[:, 1], full_tris[:, 2]
+            fn = np.cross(fb - fa, fc - fa)
+            fn = fn / np.maximum(np.linalg.norm(fn, axis=1), 1e-18)[:, None]
+            fdist = point_triangle_distance(tip, fa, fb, fc, fn)
+            nearest = int(np.argmin(fdist))
+            nodes = self.surface_full[nearest].tolist()
+            self.evidence.append({
+                "tick": self.tick, "kind": "tunneling", "tip": tip.tolist(), "entry": None if self.entry is None
+                else self.entry.tolist(), "organ_top_y": float(pos[:, 1].max()),
+                "nearest_full_face_nodes": nodes, "nearest_full_dist_m": float(fdist[nearest]),
+                "nearest_full_face_in_culled": tuple(sorted(nodes)) in self.culled_keys,
+                "nearest_full_face_pos": full_tris[nearest].tolist(),
+                "culled_faces": int(len(self.contact_tris)), "full_faces": int(len(self.surface_full)),
+            })
         cut = self.cut_request(tip, pos, inside)
         crossed_count = int(cut["crossed"].sum()) if cut else 0
 
@@ -521,8 +566,13 @@ class ContactController(Sofa.Core.Controller):
             handle.write(",".join(DIAG_HEADER) + "\n")
             for row in self.diag:
                 handle.write(",".join(str(v) for v in row) + "\n")
+        if self.evidence:
+            with open(os.path.join(self.out_dir, f"evidence_seg{seg}.json"), "w", encoding="utf-8",
+                      newline="\n") as handle:
+                json.dump(self.evidence, handle)
         self.rows = []
         self.diag = []
+        self.evidence = []
 
 
 def createScene(root):

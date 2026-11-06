@@ -100,7 +100,10 @@ triangles times organ triangles) fall from 16416 to 1224.
   face (smallest |sd|) is used.
 * Fallback: a point inside the organ (full-boundary ray parity) with no candidate
   uses the nearest culled face.
-* Penalty normal force: `f = k pen n - c (v . n)`, with `pen = 0.5 mm - sd`,
+* Penalty normal force (slice 2b): `f = min(max(k pen - c (v . n), 0), F_cap) n`, with
+  `F_cap = 1.0 N` per tool point (uncited model choice). A candidate with `pen > 0`
+  is a contact record even when the net force is zero (see the missed-contact
+  definition below). `pen = 0.5 mm - sd`,
   `k = 100 N/m`, `c = 0.5 N s/m`, and `n` the outward face normal.
 * Reaction: distributed to face nodes by barycentric weights through a
   `ConstantForceField` with a fixed node index set.
@@ -213,12 +216,13 @@ suite (1000 trials, with dissection and cutting in slice 2).
 
 | Parameter | Value | Status | Source |
 |---|---|---|---|
-| `puncture_k_perp` (K_perp) | 430 N/m | cited, transferred from a phantom | Roesthuis RJ, van Veen YRJ, Jahya A, Misra S. Mechanics of needle-tissue interaction. IROS 2011. Interaction stiffness Ke = 430 N/m in their gelatine phantom simulation (Fig. 12). |
+| `puncture_k_perp` (K_perp) | 430 N/m | cited, phantom value transferred to liver; UNVERIFIED against the full text (not fetched, see the slice-2b log) | Roesthuis RJ, van Veen YRJ, Jahya A, Misra S. Mechanics of needle-tissue interaction. IROS 2011. Ke = 430 N/m in the gelatine phantom simulation (Fig. 12 label, from a search excerpt only). |
+| `contact_force_cap_n` | 1.0 N per tool point | uncited model choice (slice 2b) | none |
 | `puncture_anisotropy` (A) | 2.0 | uncited model choice | none |
 | `contact_stiffness` (k) | 100 N/m | uncited model choice | none found |
 | `contact_damping` (c) | 0.5 N s/m | uncited model choice | none found |
 | `contact_m` (margin) | 0.5 mm | uncited model choice | none |
-| Fracture toughness G_c | 164 J/m^2 | cited, bovine liver | Gokgol C, Basdogan C, Canadinc D. Estimation of fracture toughness of liver tissue: experiments and validation. Med Eng Phys. 2012;34(7):882-891 (PMID 22024208). Reported value J = 164 +/- 6 J/m^2. |
+| Fracture toughness G_c | 164 J/m^2 | cited, bovine liver; abstract verified against the Europe PMC record (PMID 22024208, DOI 10.1016/j.medengphy.2011.09.030); full text NOT verified (open-access copy blocked by a proof-of-work page in this session) | Gokgol C, Basdogan C, Canadinc D. Estimation of fracture toughness of liver tissue: experiments and validation. Med Eng Phys. 2012;34(7):882-891. Abstract: "J=164±6 J/m(2)" for bovine liver. |
 | Cut width w | 1.0 mm | uncited geometry choice | twice the 0.5 mm shaft radius |
 | Cut force F_cut = G_c w | 0.164 N | derived from the two rows above | none |
 | `cut_min_depth_mm` | 1.0 mm | uncited model choice | none |
@@ -288,10 +292,18 @@ Per-trial checks (a trial passes when all nine pass):
   pilot, the median absolute step in the wrench at a cut tick is 2.30 N (198 cut
   events), while the 99th percentile over all other ticks is 3.54 N, and the median
   over all other ticks is 0. Cut steps lie inside the ordinary tick distribution.
-* Two pilot trials fail the tunneling and missed-contact checks (see the slice-2 log
-  for the per-trial evidence): T081 (one tunneling step at tick 181, following a
-  70 N penalty transient) and T099 (four missed tool points at tick 185 in the
-  cut channel). The 100-trial pilot is not a passing gate result.
+* Slice 2b pilot (100 trials, `pilot-slice2b`): tunneling 0 steps, missed-contact 0
+  points. Trials passing all nine checks: 84 of 100. All 16 failures are
+  `finite_wrench`, caused by contact steps whose net force is exactly zero (1 to 6
+  steps per trial, tip outside the organ). Under the slice-2b record rule, a
+  candidate in penetration is a contact record even when damping cancels the
+  penalty force. This changes the meaning of "contact record" and is an owner
+  decision (see the slice-2b log). The checks were not changed.
+* The T081 and T099 failure modes from slice 2 are addressed (see the slice-2b log).
+  Their root causes were a per-point penalty force with no bound (organ nodes of about
+  4 g each received velocities near 9 m/s at a cut restart) and a damping term that
+  cancels the penalty at a point in penetration.
+* The gate G2.3 is not closed. The slice-2b pilot is not the 1000-trial gate run.
 * The cut is an approximation. Removing whole tetrahedra on the coarse 20 mm mesh
   (element size of a few millimetres) removes a channel several elements wide
   relative to the 1 mm tool. The mesh resolution is the main limit on cut geometry.

@@ -195,3 +195,21 @@ Grounded values (the owner rule: the recall floor is the gated recall at the 3.0
 Plain statement: at bounded volume (the pre-registered criterion of at most 15 times the reference) the best measured gated recall is 0.4762, which cannot approach 0.95. The slice-7 variants demonstrate 0.9614 (v7) and 0.9992 (v6) gated recall, but only at organ-scale volume (31.40 and 46.11 times the reference; v6 exceeds the reference liver envelope of 1527.7 mL and v7 reaches 86 percent of it), which no FR-RTA-003 keep-out can use on this organ. The v8 attempt to bound the interpolation lost recall to 0.3108 through its source rule (the sources were restricted to the seed-connected acquisition-2 islands, which truncates the tree at the gaps the variant exists to bridge; recorded as the defect for the next slice). The honest measured values 0.47 and 7.5 are proposed as the clause markers and the owner re-centers. Alternative reading recorded for the owner: if bounded is read as below the reference liver envelope volume (1527.7 mL), the v7 point (0.9614 at 31.40 times) is the best bounded variant and the markers would be 0.96 and 31.5.
 
 Clause (b) of Section 3 as grounded: the diameter floor is 3.0 mm [adjustable], the recall floor is 0.47 [adjustable], and the volume multiplier is 7.5 [adjustable]. The gated set at 3.0 mm is 8 components (12950 voxels of the 13265-voxel reference); per-band and per-component recalls are in the slice-7 log and each evaluation record.
+
+## Addendum (owner ruling 2026-11-05, final values)
+
+Owner ruling ("0.47 gate + aspiration", 2026-11-05), recorded as the authority for this addendum. The owner chose the measured-capability gate over the v7 organ-scale reading (see Slice-7 grounding above). The G2.1 vascular clause closes on these values, and clause (b) of Section 3 is the regression pin for the vascular keep-out.
+
+Final values:
+
+* Gated recall floor 0.47. Measured 0.476216 at the 3.0 mm floor on the best bounded-volume variant (v5), rounded down.
+* Keep-out volume at most 7.5 times the reference vessel volume. Measured 7.2384 at 293.024 mL margin-inclusive against the 40.48 mL reference, rounded up.
+* The 1.0 mm safety margin contributes 78.16 mL (core 214.865 mL to margin-inclusive 293.024 mL). The margin does not break the bound: the margin-free core is 5.31 times the reference. The margin is documented and carried into the FR-RTA-003 envelope parameters.
+
+Boundaries recorded with the verdict:
+
+* The 0.95-at-bounded-volume aspiration is unreachable on this acquisition pair. The acquisition-1 portal lumen collapses to 71 to 91 HU inside the 54 to 86 HU liver band, so the keep-out cannot separate the portal tree from parenchyma at bounded volume. The aspiration is recorded as a data-side work item: a thin-slice, contrast-timed reference acquisition. Plan Section 7.1 carries the risk row.
+* All values are grounded on one patient (HCC_001). They are re-grounded when more patients are evaluated.
+* The unresolved vessel residual (21.66 mL of the 40.48 mL reference: components 17, 9, and 1 and the thin bands below 3.0 mm) is recorded in the plan Section 7.1 risk register, where FR-RTA-003 consumes it.
+
+Parenchyma (Dice 0.9077, recall 0.9505) and the tumor sub-gate (not applicable) are unchanged by this addendum.

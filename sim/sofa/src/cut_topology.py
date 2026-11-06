@@ -13,12 +13,13 @@ State dict keys (all numpy arrays):
 * tets: (T, 4) tetrahedra as node indices into pos, rest, vel
 * base: (N,) boolean, true for nodes fixed by the base fixation
 
-Release rule (documented in sim/sofa/README.md): the crossed tetrahedra are
-removed together with their stored strain energy. The nodes of the neighbor
-tetrahedra (sharing a node with a crossed tetrahedron, one ring) have their rest
-positions reset to their current positions, so the strain in that neighborhood
-is released to zero at the cut instant. The released energy is the
-Neo-Hookean energy of the neighborhood before the reset, and it is recorded.
+Release rule (slice 2c, documented in sim/sofa/README.md): the crossed
+tetrahedra are removed, and the strain energy they store leaves with them. The
+released energy is their Neo-Hookean energy (non-negative), and the total energy
+changes by exactly minus that amount. The neighbor tetrahedra keep their rest
+configuration, so their strain relaxes through the solver. The slice-2 rule that
+reset the rest positions of a one-ring neighborhood created energy in the
+second ring (mixed rest configurations) and is retired.
 """
 
 import json
@@ -179,44 +180,30 @@ def compact(state, keep_tets_mask):
 
 
 def apply_cut(state, crossed, orient_sign, mu, lam):
-    """Remove the crossed tetrahedra, release the neighborhood strain, and check integrity.
+    """Remove the crossed tetrahedra and check integrity (release rule in the module docstring).
 
-    Returns (new_state, record). record holds the removed count, the neighborhood size,
-    the released energy (J), the integrity result, and the pre and post counts.
+    Returns (new_state, record). record holds the removed count, the released energy (J,
+    equal to the removed tetrahedra energy), the total energy before and after (J), the
+    integrity result, and the pre and post counts.
     """
     tets = state["tets"]
     crossed = np.asarray(crossed, dtype=bool)
     if not crossed.any():
         raise ValueError("cut requested with no crossed tetrahedra")
-    crossed_nodes = np.zeros(len(state["pos"]), dtype=bool)
-    crossed_nodes[tets[crossed].reshape(-1)] = True
-    neighbor = (~crossed) & crossed_nodes[tets].any(axis=1)
-    neighbor_nodes = np.zeros(len(state["pos"]), dtype=bool)
-    neighbor_nodes[tets[neighbor].reshape(-1)] = True
-    energy_before = float(neohookean_energy(state["rest"], state["pos"], tets[neighbor], mu, lam).sum())
     removed_energy = float(neohookean_energy(state["rest"], state["pos"], tets[crossed], mu, lam).sum())
+    total_before = float(neohookean_energy(state["rest"], state["pos"], tets, mu, lam).sum())
 
-    rest = state["rest"].copy()
-    rest[neighbor_nodes] = state["pos"][neighbor_nodes]
-    staged = {"pos": state["pos"], "vel": state["vel"], "rest": rest, "tets": tets, "base": state["base"]}
-    new_state, orphans_removed = compact(staged, ~crossed)
-    energy_after = float(neohookean_energy(new_state["rest"], new_state["pos"],
-                                           new_state["tets"][neighbor[~crossed]], mu, lam).sum())
+    new_state, orphans_removed = compact(state, ~crossed)
     ok, integrity = check_integrity(new_state, orient_sign)
-    total_before = float(neohookean_energy(state["rest"], state["pos"], tets[~crossed], mu, lam).sum())
     total_after = float(neohookean_energy(new_state["rest"], new_state["pos"], new_state["tets"], mu, lam).sum())
     record = {
         "total_energy_before_j": total_before,
         "total_energy_after_j": total_after,
         "total_energy_jump_j": total_after - total_before,
         "crossed_tetrahedra": int(crossed.sum()),
-        "neighbor_tetrahedra": int(neighbor.sum()),
-        "neighbor_nodes_reset": int(neighbor_nodes.sum()),
         "orphan_nodes_removed": orphans_removed,
         "removed_tet_energy_j": removed_energy,
-        "neighborhood_energy_before_j": energy_before,
-        "neighborhood_energy_after_j": energy_after,
-        "released_energy_j": energy_before - energy_after,
+        "released_energy_j": removed_energy,
         "integrity_ok": ok,
         "integrity": integrity,
         "nodes_before": int(len(state["pos"])),

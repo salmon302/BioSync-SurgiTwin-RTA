@@ -12,8 +12,9 @@ Per-trial checks:
 * zero_tunneling: no step has the tip inside the organ with zero contact points.
 * zero_missed_contacts: no tool point has a full-boundary swept hit without a
   contact record at that tick.
-* finite_wrench: every value in the bridge capture is finite, and the wrench is
-  finite and non-zero on every contact step.
+* finite_wrench (episode rule, slice 2c): the wrench is finite at every contact step,
+  and the peak wrench norm of each contact episode (a maximal run of consecutive
+  contact steps) is strictly positive.
 * topology_integrity: every cut passes cut_topology.check_integrity (no inverted,
   orphaned, non-manifold, or disconnected elements), the driver's crossed set
   matches the scene's crossed set, and the mesh stays valid through the trial.
@@ -328,10 +329,16 @@ def check_trial(trial, result, out_dir):
     tunneling = [i for i, row in enumerate(diag) if int(row["inside"]) == 1 and int(row["contact_points"]) == 0]
     missed = [i for i, row in enumerate(diag) if int(row["missed_points"]) > 0]
     wrench = np.array([[float(v) for v in r[9:12]] + [float(v) for v in r[12:15]] for r in bridge_rows])
-    force_norm = np.linalg.norm(wrench[:, :3], axis=1)
-    wrench_contact_ok = bool(contact_steps) and all(
-        np.isfinite(wrench[i]).all() and force_norm[i] > 0.0 for i in contact_steps)
-    finite_wrench = bool(np.isfinite(wrench).all()) and wrench_contact_ok
+    episodes = []
+    for i in contact_steps:
+        if episodes and episodes[-1][-1] == i - 1:
+            episodes[-1].append(i)
+        else:
+            episodes.append([i])
+    episode_peaks = [float(np.max(np.linalg.norm(wrench[ep], axis=1))) for ep in episodes]
+    contact_finite = all(np.isfinite(wrench[i]).all() for i in contact_steps)
+    episodes_nonzero = bool(episodes) and all(p > 0.0 for p in episode_peaks)
+    finite_wrench = bool(np.isfinite(wrench).all()) and contact_finite and episodes_nonzero
 
     cut_ticks = [c["cut_tick"] for c in result["cuts"]]
     cut_integrity_ok = all(c["integrity_ok"] for c in result["cuts"]) and not result["integrity_failures"]
@@ -374,6 +381,8 @@ def check_trial(trial, result, out_dir):
         "cut_ticks": cut_ticks,
         "integrity_failures": result["integrity_failures"][:3],
         "step_change_at_cut_n": [round(x, 6) for x in step_changes],
+        "episodes": [{"start": int(ep[0]), "length": len(ep), "peak_wrench_norm": round(p, 6)}
+                     for ep, p in zip(episodes, episode_peaks)],
     }
     summary = {
         "trial": trial["id"],

@@ -168,17 +168,17 @@ checkpoint and restart:
 4. `cut_topology.check_integrity` runs on the new state. The next runSofa segment
    starts at tick t+1 from the edited state, with the same capture file series.
 
-Release rule. The neighborhood is the set of tetrahedra that share a node with a
-crossed tetrahedron (one ring, `release_rings = 1`, uncited choice). Their stored
-strain energy is the compressible Neo-Hookean energy, with the
-ParameterSet values (mu = 1785.714286 Pa, lambda = 7142.857143 Pa) taken as the
-Lame pair. This energy is recorded as `neighborhood_energy_before_j`. The rest
-configuration of every node in the neighborhood is then reset to its current
-position, which releases the neighborhood strain to zero at the cut instant
-(`neighborhood_energy_after_j`, about 1e-18 J). The released energy, the removed
-tetrahedron energy, and the counts are in each cut record in the suite summary.
-The rest reset also changes the FEM reference state, so the mass is recomputed
-from the surviving rest volume (the total mass scales with the rest volume).
+Release rule (slice 2c). Only the crossed tetrahedra are removed. Their stored
+strain energy is the compressible Neo-Hookean energy, with the ParameterSet values
+(mu = 1785.714286 Pa, lambda = 7142.857143 Pa) taken as the Lame pair (a monitor
+convention, not verified against the SOFA parameter definition). This energy is the
+released energy, recorded as `released_energy_j` and always non-negative. The total
+energy changes by exactly minus that amount (`total_energy_jump_j`). The neighbor
+tetrahedra keep their rest configuration, and their strain relaxes through the
+solver. The slice-2 rule reset the rest positions of a one-ring neighborhood. It
+created energy in the second ring (a mixed rest configuration), up to +3.7e-3 J at
+one cut, and it is retired. The mass is recomputed from the surviving rest volume
+(the total mass scales with the rest volume).
 
 Integrity checks after every cut (`cut_topology.check_integrity`): every
 tetrahedron references four distinct valid nodes, no node is orphaned, no
@@ -216,13 +216,13 @@ suite (1000 trials, with dissection and cutting in slice 2).
 
 | Parameter | Value | Status | Source |
 |---|---|---|---|
-| `puncture_k_perp` (K_perp) | 430 N/m | cited, phantom value transferred to liver; UNVERIFIED against the full text (not fetched, see the slice-2b log) | Roesthuis RJ, van Veen YRJ, Jahya A, Misra S. Mechanics of needle-tissue interaction. IROS 2011. Ke = 430 N/m in the gelatine phantom simulation (Fig. 12 label, from a search excerpt only). |
+| `puncture_k_perp` (K_perp) | 430 N/m | cited, verified against the full text (Roesthuis 2011, p. 2563); a lateral phantom stiffness used as an axial stiffness (mapping limit, see Verified citations) | Roesthuis RJ, van Veen YRJ, Jahya A, Misra S. Mechanics of needle-tissue interaction. IROS 2011. Ke = 430 N/m in the gelatine phantom simulation (Fig. 12 label, from a search excerpt only). |
 | `contact_force_cap_n` | 1.0 N per tool point | uncited model choice (slice 2b) | none |
 | `puncture_anisotropy` (A) | 2.0 | uncited model choice | none |
 | `contact_stiffness` (k) | 100 N/m | uncited model choice | none found |
 | `contact_damping` (c) | 0.5 N s/m | uncited model choice | none found |
 | `contact_m` (margin) | 0.5 mm | uncited model choice | none |
-| Fracture toughness G_c | 164 J/m^2 | cited, bovine liver; abstract verified against the Europe PMC record (PMID 22024208, DOI 10.1016/j.medengphy.2011.09.030); full text NOT verified (open-access copy blocked by a proof-of-work page in this session) | Gokgol C, Basdogan C, Canadinc D. Estimation of fracture toughness of liver tissue: experiments and validation. Med Eng Phys. 2012;34(7):882-891. Abstract: "J=164±6 J/m(2)" for bovine liver. |
+| Fracture toughness G_c | 164 J/m^2 | cited, bovine liver; verified against the full text (Gokgol 2012, p. 885 and Fig. 8, p. 886; intercept of the diameter fit) | Gokgol C, Basdogan C, Canadinc D. Estimation of fracture toughness of liver tissue: experiments and validation. Med Eng Phys. 2012;34(7):882-891. Abstract: "J=164±6 J/m(2)" for bovine liver. |
 | Cut width w | 1.0 mm | uncited geometry choice | twice the 0.5 mm shaft radius |
 | Cut force F_cut = G_c w | 0.164 N | derived from the two rows above | none |
 | `cut_min_depth_mm` | 1.0 mm | uncited model choice | none |
@@ -245,6 +245,55 @@ Notes on the sources:
 * No citable source was found for the penalty stiffness, damping, or the
   anisotropy ratio A in the time available. These stay as uncited model choices.
 
+### Verified citations (slice 2c)
+
+The four papers were checked against the full texts (owner-supplied PDFs in
+`SNDEV/research/`, read-only, not committed). Page numbers are the journal page
+numbers printed on each page.
+
+| Value | Source (full bibliographic) | Location | Context | Model role |
+|---|---|---|---|---|
+| Ke = 430 N/m, optimum of the interaction stiffness | Roesthuis RJ, van Veen YRJ, Jahya A, Misra S. Mechanics of needle-tissue interaction. Proc IEEE/RSJ IROS 2011, pp. 2557-2563. | Sec. VI and Fig. 12 caption, p. 2563 ("found to be 430 N/m, the corresponding error is 0.179 mm"); error curve Fig. 11, p. 2562 | Gelatine phantom, Young's modulus 35 kPa (Sec. V, p. 2560), bevel-tip stainless steel needle, 1 mm diameter, 30 degree bevel (Table I, p. 2560), insertion 10 and 20 mm/s (p. 2560) | Lateral interaction stiffness of a cantilever-on-springs model (per insertion step, N/m). Not an axial puncture stiffness. Used as K_perp (see mapping note). |
+| Friction 0.0265 N/mm (10 mm/s), 0.0339 N/mm (20 mm/s) | Roesthuis et al. 2011 | Table II, p. 2560 (averages over 20, 30, 40, 50 mm phantoms); Conclusions p. 2563 | Gelatine phantom | Not implemented in slice 2c (known limit) |
+| Fracture energy J = 164 +/- 6 J/m^2 (intercept) | Gokgol C, Basdogan C, Canadinc D. Estimation of fracture toughness of liver tissue: experiments and validation. Med Eng Phys. 2012;34(7):882-891. DOI 10.1016/j.medengphy.2011.09.030. | Abstract, p. 882; linear fit y = -29x + 164 (R^2 = 0.981) on p. 885 and Fig. 8, p. 886; intercept stated p. 885 | Fresh whole bovine livers, 3 animals, tested within 2 h of harvest (p. 884); needle insertion at 3 mm/s to 20 mm depth (p. 885); needles 2, 3, 4, 5 mm diameter with entry angles 12, 18, 24, 30 degrees (p. 884) | G_c in the cut criterion F_cut = G_c w |
+| Gokgol measured diameter dependence | Gokgol et al. 2012 | Table 2, p. 886 (average over 3 animals): 2 mm 110.83 +/- 4.32; 3 mm 70.63 +/- 4.32; 4 mm 45.88 +/- 2.83; 5 mm 22.33 +/- 2.10 J/m^2 | as above | Shows that G_c is an extrapolation. The model cut width (1.0 mm) is outside the tested 2 to 5 mm range. |
+| Stiffness polynomial f(z) = a1 z + a2 z^2 (N, z in mm) | Okamura AM, Simone C, O'Leary MD. Force modeling for needle insertion into soft tissue. IEEE Trans Biomed Eng. 2004;51(10):1707-1716. DOI 10.1109/TBME.2004.831542. | Eq. (2)-(3), p. 1709; liver 1 a1 = 0.0480 N/mm, a2 = 0.0052 N/mm^2; liver 2 a1 = 0.0020 N/mm, a2 = 0.0023 N/mm^2 (p. 1709) | Bovine liver, ex vivo, room temperature, 3 to 6 h post-mortem (p. 1709), 3 mm/s, 1.27 mm OD bevel needle (p. 1709) | Comparison only. Not used as a parameter (see the mapping note). |
+| Peak pre-puncture force 2.3040 +/- 0.8286 N at 16.6514 +/- 3.5470 mm (19 insertions, capsule intact) | Okamura et al. 2004 | p. 1709 | as above | Comparison only |
+| Friction (Karnopp model, per unit length) D_p 18.45 N/m, D_n -18.23 N/m, b_p 212.31 N s/m^2, b_n -293.08 N s/m^2, C_p 10.57 N/m, C_n -11.96 N/m | Okamura et al. 2004 | Table I, p. 1712 | bovine liver, sinusoidal motion 0.2 Hz, 20 mm/s amplitude (p. 1710) | Comparison only; same order as the Roesthuis friction values (26.5 to 33.9 N/m) |
+| Cutting force F_cutting = 0.94 +/- 0.36 N (5 insertions at 3 mm/s) | Okamura et al. 2004 | Eq. (11) and text, p. 1712 | bovine liver, 1.27 mm OD bevel needle | Comparison only (see the cut-criterion mapping) |
+| Insertion force decomposition F_total = F_stiffness + F_friction + F_cutting | Okamura et al. 2004 | Eq. (1), p. 1708 | as above | Model structure |
+| Friction parameter mu_s (N/mm, per unit length) and swept-force term | Jackson RC, Desai V, Castillo JP, Cavusoglu MC. Needle-tissue interaction force state estimation for robotic surgical suturing. Proc IEEE/RSJ IROS 2016, pp. 3659-3664. | Sec. III, p. 3660 (friction wrench with mu_s in N/mm); Sec. IV, p. 3661 (stiffness K range 0.015 to 0.032 N/mm^2 for K_x, K_y, K_z); Sec. IV p. 3662 (cutting terms set to zero, alpha = beta = 0) | Semicircular CT-1 suture needle, ex vivo beef, 2 kHz force data | Structure support only. The needle geometry (circular) and the swept-area term are not in the straight-needle puncture model. No value from this paper is used. |
+
+Cut criterion mapping. The model criterion is F_cut = G_c w with G_c = 164 J/m^2 and
+w = 1.0 mm, which gives 0.164 N. This is a fracture-energy trigger: a crack advancing
+across a width w releases G_c w of energy. Okamura's F_cutting = 0.94 N is a measured
+force constant for a 1.27 mm bevel needle that includes tip stiffness, and it is not a
+threshold on the same quantity. The model uses the G_c w trigger. The Okamura value is
+a comparison only. A linear reading of the F_cutting constant (0.94 N divided by the
+1.27 mm diameter) would give about 740 J/m^2, which is far above the Gokgol value. The
+two constructs are not reconciled in this slice.
+
+Stiffness mapping. K_perp = 430 N/m is a lateral interaction stiffness from a
+phantom simulation (Roesthuis). The model applies it as an axial puncture stiffness
+(F_p = K_perp s). The Okamura polynomial is the measured liver pre-puncture force
+(N) against tip displacement (mm). At 8 mm, the polynomial gives 0.72 N for liver 1
+(a1 z + a2 z^2 = 0.384 + 0.333) and 0.163 N for liver 2 (0.016 + 0.147). The model
+gives 3.44 N at 8 mm (430 N/m times 8 mm). The model is therefore stiffer than the
+liver polynomial by a factor of about 4.8 (liver 1) and 21 (liver 2) at that depth. The
+liver polynomial is the closer construct for the axial case. Replacing K_perp is an
+owner decision, and it is not made in this slice.
+
+Transfer limitations. The gelatine and ex vivo bovine values transfer to in vivo human
+liver with documented limits: no perfusion or vascular pressure (Okamura 2004, p. 1715,
+"vascular pressure, bleeding, and temperature will affect the tool-tissue interaction
+forces"); no bile duct or vessel turgor; boundary constraints and post-mortem
+degradation (tests at 3 to 6 h post-mortem, p. 1709); temperature and fluid loss (tests
+at room temperature, p. 1709). The gelatine phantom of Roesthuis is a single homogeneous
+material at 35 kPa and has no organ structure. The Gokgol fracture values come from
+whole bovine livers tested within 2 h, and the Gokgol paper states that the
+bounds of its values are tighter than earlier reports (p. 888). None of these values
+was measured in human tissue.
+
 ### Suite harness and checks (slice 2)
 
 `src/run_contact_suite.py` runs the grid and writes
@@ -266,7 +315,10 @@ Per-trial checks (a trial passes when all nine pass):
 * `zero_missed_contacts`: no tool point has a full-boundary swept hit without a contact
   record at that tick. The full-boundary test is independent of the culled candidate
   set.
-* `finite_wrench`: the wrench is finite, and non-zero on every contact step.
+* `finite_wrench` (episode rule, owner ruling 2026-11-06): the wrench is finite at
+  every contact step, and the peak 6-vector wrench norm of each contact episode is
+  strictly positive. An episode is a maximal run of consecutive contact steps. Episode
+  peaks are in each trial's evidence (`episodes`).
 * `topology_integrity`: every cut passes `check_integrity`, and the driver's crossed set
   equals the scene's crossed set.
 * `capture_schema`: exact header, consecutive ticks from 0 across all segments, row count

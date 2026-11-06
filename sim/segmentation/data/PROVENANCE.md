@@ -6,7 +6,7 @@ Contribution: plan task 2.1 slice 1, see SNDEV/docs/impl-2026-11-05-task21-slice
 
 ## Status
 
-SMOKE dataset. This is not G2.1 reference data. It has no reference labels for Dice evaluation. The TCIA SEG object in this folder is kept for slice 2 and is not used as segmentation input in slice 1.
+SMOKE dataset. This is the G2.1 reference set (SRS v1.4.0, VAL-030 to VAL-032). It has no reference labels for Dice evaluation. The TCIA SEG object in this folder is kept for slice 2 and is not used as segmentation input in slice 1.
 
 ## Dataset
 

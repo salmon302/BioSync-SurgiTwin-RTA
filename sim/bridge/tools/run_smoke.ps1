@@ -22,7 +22,8 @@ param(
     [ValidateSet('poll', 'wait')][string]$Spin = 'wait',
     [ValidateSet('synthetic', 'replay')][string]$Source = 'synthetic',
     [string]$ReplayFile = '',
-    [switch]$ReplayLoop
+    [switch]$ReplayLoop,
+    [switch]$NoValueCheck
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,7 +56,8 @@ $env:RMW_IMPLEMENTATION = 'rmw_fastrtps_cpp'
 $rateList = @($Rates -split ',' | ForEach-Object { [int]$_.Trim() })
 foreach ($rate in $rateList) {
     $stamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHHmmssZ')
-    $tag = "bridge-smoke-$($rate)hz-$($Duration)s-source-$Source-timer-$TimerMode-spin-$Spin-$stamp"
+    $checkLabel = if ($NoValueCheck) { '-valuecheck-off' } else { '' }
+    $tag = "bridge-smoke-$($rate)hz-$($Duration)s-source-$Source-timer-$TimerMode-spin-$Spin$checkLabel-$stamp"
     $json = Join-Path $LogDir "$tag.json"
     $subOut = Join-Path $LogDir "$tag-subscriber.txt"
     $subErr = Join-Path $LogDir "$tag-subscriber-stderr.txt"
@@ -66,7 +68,7 @@ foreach ($rate in $rateList) {
     $subArgs = @('run', '--manifest-path', $manifest, '--', 'python', $measure,
         '--rate', "$rate", '--duration', "$Duration", '--out', $json, '--ready-file', $ready,
         '--spin', $Spin, '--data-source', $sourceLabel)
-    if ($replayPath) { $subArgs += @('--expect-csv', $replayPath) }
+    if ($replayPath -and -not $NoValueCheck) { $subArgs += @('--expect-csv', $replayPath) }
     $sub = Start-Process -FilePath $pixi -ArgumentList $subArgs -NoNewWindow -PassThru `
         -RedirectStandardOutput $subOut -RedirectStandardError $subErr
 

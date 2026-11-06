@@ -173,3 +173,25 @@ Effect on the clause (b) of Section 3:
 * G2.1's vascular clause is OPEN while the values are pending. The parenchyma clause (PASS on the slice-6 record, Dice 0.9077 and recall 0.9505 against the liver envelope) and the tumor sub-gate (not applicable, with the two-pass non-detectability evidence and the annotation search trail) are unchanged by this addendum.
 
 Slice-7 scope funded by this ruling: fix the missed resolvable vessels (targets: component 17, 5.39 mL at 10.94 mm max lumen diameter with recall 0.0; component 9, 4.38 mL at 7.81 mm with recall 0.0; component 1, 6.16 mL at 6.44 mm with recall 0.3259; and the 3 to 5 mm band, 2219 voxels at 0.5854 recall), then re-ground the recall floor and the volume multiplier at the 3.0 mm floor and apply the grounded clause text to the VTM row and the plan gate cells.
+
+### Slice-7 grounding (2026-11-05)
+
+Three documented vessel variants were run and scored once each (log `SNDEV/docs/impl-2026-11-05-task21-slice7-vessels.md`; diagnosis `SNDEV/logs/probe24-vessel-miss-diagnosis-2026-11-05.json`). The mechanism finding: the slice-5 corridors missed the portal tree because the acquisition-1 lumen partial-volumes into the parenchyma band (median 71 to 91 HU against liver 54 to 86 HU) and because the candidate fragmented before the seed selection ran (the v5 z-closing runs after seeding and cannot repair the fragmentation). The fixable part was confirmed: the acquisition-2 slices of every target component measure 155 to 182 HU and pass the gates at 0.99 to 1.0.
+
+Final Pareto (gated recall at the 3.0 mm floor, margin-inclusive keep-out volume):
+
+| Variant | Mechanism | Gated recall | Full-tree recall | Keep-out mL | Multiple | Bounded (at most 15x) |
+| --- | --- | --- | --- | --- | --- | --- |
+| v5 (slice-5 chain) | corridors, brightness 85 / 145 HU, vesselness 0.6, z-closing after seeding | 0.4762 | 0.4650 | 293.02 | 7.24 | yes |
+| v6 | iterated 3 pixel z-fill from adjacent footprints on acquisition 1 slices | 0.9992 | 0.9988 | 1866.57 | 46.11 | no (flood) |
+| v7 | lumen-windowed fill, iterated footprint-intersection (3 pixel) | 0.9614 | 0.9603 | 1271.17 | 31.40 | no (organ-scale) |
+| v8 | drift-matched fill from seed-connected acquisition 2 sources | 0.3108 | 0.3081 | 185.10 | 4.57 | yes |
+
+Grounded values (the owner rule: the recall floor is the gated recall at the 3.0 mm floor achieved by the best bounded-volume variant, rounded down to two decimals; the multiplier is the measured margin-inclusive volume as a multiple of the 40.48 mL reference, rounded up to a clean value):
+
+* Recall floor: 0.47. Measured 0.476216 on the best bounded-volume variant (v5, the slice-5 chain) at the 3.0 mm floor. Margin note: rounded down to two decimals and grounded on one patient; it is 0.4738 short of the 0.95 aspiration.
+* Volume multiplier: 7.5. Measured 7.2384 at 293.024 mL margin-inclusive (core 214.865 mL; the 1.0 mm margin contributes 78.16 mL and is documented and carried into the FR-RTA-003 envelope parameters). Margin note: rounded up to the next 0.5 and grounded on one patient.
+
+Plain statement: at bounded volume (the pre-registered criterion of at most 15 times the reference) the best measured gated recall is 0.4762, which cannot approach 0.95. The slice-7 variants demonstrate 0.9614 (v7) and 0.9992 (v6) gated recall, but only at organ-scale volume (31.40 and 46.11 times the reference; v6 exceeds the reference liver envelope of 1527.7 mL and v7 reaches 86 percent of it), which no FR-RTA-003 keep-out can use on this organ. The v8 attempt to bound the interpolation lost recall to 0.3108 through its source rule (the sources were restricted to the seed-connected acquisition-2 islands, which truncates the tree at the gaps the variant exists to bridge; recorded as the defect for the next slice). The honest measured values 0.47 and 7.5 are proposed as the clause markers and the owner re-centers. Alternative reading recorded for the owner: if bounded is read as below the reference liver envelope volume (1527.7 mL), the v7 point (0.9614 at 31.40 times) is the best bounded variant and the markers would be 0.96 and 31.5.
+
+Clause (b) of Section 3 as grounded: the diameter floor is 3.0 mm [adjustable], the recall floor is 0.47 [adjustable], and the volume multiplier is 7.5 [adjustable]. The gated set at 3.0 mm is 8 components (12950 voxels of the 13265-voxel reference); per-band and per-component recalls are in the slice-7 log and each evaluation record.

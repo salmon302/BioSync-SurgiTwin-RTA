@@ -26,8 +26,11 @@ SMOKE dataset. This is not G2.1 reference data. It has no reference labels for D
 | --- | --- | --- | --- |
 | HCC_001_CT_C-A-P_1.3.6.1.4.1.14519.5.2.1.1706.8374.302065206690360709343725942120.zip | 1.3.6.1.4.1.14519.5.2.1.1706.8374.302065206690360709343725942120 | 17780801 | 4B3E47905148EDE21FDE9AD97AD2EE9EF4BB98A2D63EA6D2DB226F82234DD832 |
 | HCC_001_SEG_1.2.276.0.7230010.3.1.3.8323329.719.1600928570.399942.zip | 1.2.276.0.7230010.3.1.3.8323329.719.1600928570.399942 | 36327 | D1CADD284A15A477C0CACD76E9C9AE239701A7AAC280EC99A0A5B3AD5B220A17 |
+| HCC-TACE-Seg_clinical_data-V2.xlsx | Clinical data (no DICOM series) | 128507 | E9D2683DC907819AA08E4027E085854F46464BEC834A09E80FC83B19A89E092B |
 
 The extracted folders `HCC_001_CT_C-A-P_<UID>/` (66 DICOM files) and `HCC_001_SEG_<UID>/` (1 DICOM file) are derived from the zips above. The DICOM files inside the folders are not checksummed individually. The zip checksums are the pinned identity.
+
+The clinical spreadsheet was downloaded 2026-11-05 from the TCIA collection page (CC BY 4.0): `https://www.cancerimagingarchive.net/wp-content/uploads/HCC-TACE-Seg_clinical_data-V2.xlsx`. It holds the per-subject clinical table and a glossary sheet. It documents tumor characteristics for HCC_001 (Tr_Size 0.8 cm, multinodular, T_involvment <= 50%) and no lesion location (no lobe, segment, or coordinate field). The search trail for the operator-seeded tumor clause is in `SNDEV/docs/impl-2026-11-05-task21-slice5-val031.md`.
 
 ## Excluded source
 

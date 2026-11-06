@@ -59,22 +59,37 @@ BONE_MARGIN_MM = 3
 LIVER_BOUNDS = {1: (50.0, 95.0), 2: (80.0, 150.0)}
 BRIGHT_BOUNDS_V1 = {1: (85.0, 285.0), 2: (140.0, 285.0)}
 BRIGHT_BOUNDS_V2 = {1: (100.0, 285.0), 2: (150.0, 285.0)}
+BRIGHT_BOUNDS_V3 = {1: (85.0, 285.0), 2: (125.0, 285.0)}
+BRIGHT_BOUNDS_V4 = {1: (78.0, 285.0), 2: (125.0, 285.0)}
+BRIGHT_BOUNDS_V5 = {1: (85.0, 285.0), 2: (145.0, 285.0)}
 VESSEL_SIGMAS_MM = (1.5, 3.0, 6.0)
+VESSEL_SIGMAS_V3_MM = (0.75, 1.5, 3.0, 6.0)
+VESSEL_SIGMAS_V4_MM = (1.2, 2.0, 3.0, 6.0)
 VESSEL_BETA = 0.5
 VESSEL_C = 6.0
 VESSEL_S_FLOOR = 4.0
-VESSEL_T = {"v1": 0.5, "v2": 0.6}
-LIVER_OPEN_MM = {"v1": 3.0, "v2": 2.0}
+VESSEL_S_FLOOR_V4 = 5.0
+VESSEL_T = {"v1": 0.5, "v2": 0.6, "v3": 0.35, "v4": 0.5, "v5": 0.6}
+LIVER_OPEN_MM = {"v1": 3.0, "v2": 2.0, "v3": 2.0}
 LIVER_CLOSE_MM = 3.0
 LIVER_ROI = {"x": (30, 350), "y": (50, 350)}
-LIVER_Z_MM = (-390.0, -238.0)
+LIVER_Z_MM = {"v1": (-390.0, -238.0), "v2": (-390.0, -238.0), "v3": (-416.0, -238.0)}
 LIVER_DILATE_FOR_VESSEL_MM = 8.0
 AORTA_BOX = {"x": (235, 335), "y": (170, 300)}
+# Slice-5 corridors (seed-subtree selection). The aorta corridor (x 250 to 305, y 195 to 285) follows
+# the visible aorta axis and cuts the renal, mesenteric, and lumbar branches at 2 to 3 cm from it
+# (evaluation-side geometry: the SEG aorta label bbox is x 261 to 297, y 222 to 275). The portal
+# subtree is confined to the liver zone, which cuts the SMV below the liver.
+AORTA_CORRIDOR = {"x": (250, 305), "y": (195, 285)}
+PORTAL_ZONE_DILATE_MM = 8.0
 # Kidney ROIs (CT inspection, probe14b and probe11 overlays): the renal arteries connect the aorta
 # tree to the kidney vasculature, so the kidneys are excluded from the vessel candidate (v2).
 KIDNEY_BOXES = ({"x": (115, 245), "y": (255, 380)}, {"x": (325, 445), "y": (240, 355)})
-VESSEL_DILATE_MM = {"v1": 2.0, "v2": 1.0}
+VESSEL_DILATE_MM = {"v1": 2.0, "v2": 1.0, "v3": 1.0, "v4": 1.0, "v5": 1.0}
 VESSEL_CORE_ERODE_MM = 1.5
+KEEP_OUT_MARGIN_MM = 1.0
+VESSEL_PROTECT_MM = 3.0
+SMALL_HOLE_MAX_VOXELS = 100
 TUMOR_DELTA_HU_V1 = 15.0
 TUMOR_MIN_ML = 2.0
 TUMOR_MAX_ML = 150.0
@@ -95,9 +110,9 @@ PORTAL_SEEDS = [(23, 215, 228), (19, 215, 228)]
 # acquisition (see SNDEV/docs/impl-2026-11-05-task21-slice4-method.md), so the segment is empty.
 TUMOR_CONFIRMED_FOCUS = None
 
-LIVER_VARIANT = os.environ.get("SURGITWIN_LIVER_VARIANT", "v2")
+LIVER_VARIANT = os.environ.get("SURGITWIN_LIVER_VARIANT", "v3")
 TUMOR_VARIANT = os.environ.get("SURGITWIN_TUMOR_VARIANT", "v1")
-VESSEL_VARIANT = os.environ.get("SURGITWIN_VESSEL_VARIANT", "v2")
+VESSEL_VARIANT = os.environ.get("SURGITWIN_VESSEL_VARIANT", "v5")
 
 
 def utc_now():
@@ -222,6 +237,21 @@ def sitk_fill_holes(array_zyx):
     return sitk.GetArrayFromImage(out).astype(np.uint8)
 
 
+def sitk_fill_small_holes(array_zyx, max_voxels):
+    """Fill only enclosed holes of at most max_voxels voxels (big holes stay open)."""
+    filled = sitk_fill_holes(array_zyx)
+    holes = ((filled > 0) & (array_zyx == 0)).astype(np.uint8)
+    if not holes.any():
+        return array_zyx.astype(np.uint8)
+    cc = sitk.GetArrayFromImage(sitk.ConnectedComponent(sitk_img(holes, (1.0, 1.0, 1.0))))
+    counts = np.bincount(cc.ravel())
+    small = np.zeros(cc.shape, dtype=np.uint8)
+    for lbl in range(1, len(counts)):
+        if counts[lbl] <= max_voxels:
+            small[cc == lbl] = 1
+    return ((array_zyx > 0) | (small > 0)).astype(np.uint8)
+
+
 def sitk_open_1vox(array_zyx):
     img = sitk_img(array_zyx, spacing_xyz=(1.0, 1.0, 1.0))
     out = sitk.BinaryMorphologicalOpening(img, [1, 1, 1])
@@ -274,7 +304,7 @@ def hessian_components(hu_zyx, sigma_mm, spacing_xyz):
     return comps
 
 
-def vesselness_scale(hu_zyx, sigma_mm, spacing_xyz):
+def vesselness_scale(hu_zyx, sigma_mm, spacing_xyz, s_floor=VESSEL_S_FLOOR):
     """Frangi bright-tube vesselness at one scale on scale-normalized eigenvalues (HU)."""
     c = hessian_components(hu_zyx, sigma_mm, spacing_xyz)
     n = c["xx"].size
@@ -298,7 +328,7 @@ def vesselness_scale(hu_zyx, sigma_mm, spacing_xyz):
         rb = np.abs(l1) / np.sqrt(np.abs(l2 * l3))
         v = np.exp(-(rb * rb) / (2.0 * VESSEL_BETA * VESSEL_BETA)) * (
             1.0 - np.exp(-(s_norm * s_norm) / (2.0 * VESSEL_C * VESSEL_C)))
-    v = np.where((l2 < 0.0) & (l3 < 0.0) & (s_norm >= VESSEL_S_FLOOR), v, 0.0)
+    v = np.where((l2 < 0.0) & (l3 < 0.0) & (s_norm >= s_floor), v, 0.0)
     return v.reshape(c["xx"].shape)
 
 
@@ -360,10 +390,17 @@ def chain_vessel_v0(widget, seg_node, vessel_id, vol, hu, shape, spacing, bone_e
 
 
 def chain_vessel_v1(hu, sm, acq_by_slice, spacing, liver, variant):
-    """Seeded vessel growth: phase-aware brightness, multi-scale Frangi vesselness, seed components."""
+    """Seeded vessel growth: phase-aware brightness, multi-scale Frangi vesselness, seed components.
+
+    Variant v3 applies seed-subtree selection: the aorta subtree is confined to the aorta corridor
+    (the renal, mesenteric, and lumbar branches leave it within 2 to 3 cm of the axis) and the portal
+    subtree to the liver zone (the SMV leaves it below the liver). Variant v3 also uses the smaller
+    vesselness scales for 2 to 4 mm branches and a lower vesselness threshold.
+    """
     sitk_version = sitk.Version().VersionString()
     chains = []
-    bounds = BRIGHT_BOUNDS_V1 if variant == "v1" else BRIGHT_BOUNDS_V2
+    bounds = {"v1": BRIGHT_BOUNDS_V1, "v2": BRIGHT_BOUNDS_V2, "v3": BRIGHT_BOUNDS_V3, "v4": BRIGHT_BOUNDS_V4,
+              "v5": BRIGHT_BOUNDS_V5}[variant]
     bright = np.zeros(hu.shape, dtype=np.uint8)
     for k in range(hu.shape[0]):
         lo, hi = bounds[int(acq_by_slice[k])]
@@ -372,18 +409,28 @@ def chain_vessel_v1(hu, sm, acq_by_slice, spacing, liver, variant):
                    "parameters": {"bounds_by_acquisition": {str(a): list(b) for a, b in bounds.items()},
                                   "phase_note": "acquisition 1 late arterial, acquisition 2 portal venous (probe9b HU measurements)"},
                    "library": "SimpleITK " + sitk_version})
+    sigmas = {"v3": VESSEL_SIGMAS_V3_MM, "v4": VESSEL_SIGMAS_V4_MM}.get(variant, VESSEL_SIGMAS_MM)
+    s_floor = VESSEL_S_FLOOR_V4 if variant in ("v4", "v5") else VESSEL_S_FLOOR
     vness = np.zeros(hu.shape, dtype=np.float32)
-    for sigma in VESSEL_SIGMAS_MM:
-        vness = np.maximum(vness, vesselness_scale(hu, sigma, spacing))
+    for sigma in sigmas:
+        vness = np.maximum(vness, vesselness_scale(hu, sigma, spacing, s_floor))
     chains.append({"effect": "multi-scale Frangi bright-tube vesselness (max over scales), seed-connected components",
-                   "parameters": {"sigmas_mm": list(VESSEL_SIGMAS_MM), "beta": VESSEL_BETA, "c_hu": VESSEL_C,
-                                  "s_floor_hu": VESSEL_S_FLOOR, "threshold": VESSEL_T[variant],
+                   "parameters": {"sigmas_mm": list(sigmas), "beta": VESSEL_BETA, "c_hu": VESSEL_C,
+                                  "s_floor_hu": s_floor, "threshold": VESSEL_T[variant],
                                   "aorta_seeds": AORTA_SEEDS, "portal_seeds": PORTAL_SEEDS},
                    "library": "SimpleITK " + sitk_version + " + numpy " + np.__version__})
-    vregion = np.zeros(hu.shape, dtype=np.uint8)
-    vregion[:, AORTA_BOX["y"][0]:AORTA_BOX["y"][1], AORTA_BOX["x"][0]:AORTA_BOX["x"][1]] = 1
-    liver_zone = sitk_dilate(liver, LIVER_DILATE_FOR_VESSEL_MM, spacing)
-    vregion = ((vregion | liver_zone) > 0)
+    if variant in ("v3", "v4", "v5"):
+        aorta_zone = np.zeros(hu.shape, dtype=bool)
+        aorta_zone[:, AORTA_CORRIDOR["y"][0]:AORTA_CORRIDOR["y"][1], AORTA_CORRIDOR["x"][0]:AORTA_CORRIDOR["x"][1]] = True
+        portal_zone = (sitk_dilate(liver, PORTAL_ZONE_DILATE_MM, spacing) > 0)
+        vregion = aorta_zone | portal_zone
+    else:
+        vregion = np.zeros(hu.shape, dtype=np.uint8)
+        vregion[:, AORTA_BOX["y"][0]:AORTA_BOX["y"][1], AORTA_BOX["x"][0]:AORTA_BOX["x"][1]] = 1
+        liver_zone = sitk_dilate(liver, LIVER_DILATE_FOR_VESSEL_MM, spacing)
+        vregion = ((vregion | liver_zone) > 0)
+        aorta_zone = vregion
+        portal_zone = vregion
     if variant == "v2":
         spine = np.zeros(hu.shape, dtype=np.uint8)
         cc_img = sitk.ConnectedComponent(sitk_img((hu >= BONE_HU).astype(np.uint8), spacing))
@@ -402,21 +449,37 @@ def chain_vessel_v1(hu, sm, acq_by_slice, spacing, liver, variant):
         for box in KIDNEY_BOXES:
             kidney[:, box["y"][0]:box["y"][1], box["x"][0]:box["x"][1]] = 1
         vcand = (vcand * (1 - kidney)).astype(np.uint8)
-    chains.append({"effect": "vessel candidate region: liver zone dilated 8 mm union aorta box; large calcified components (vertebral bodies) excluded before seeding" +
-                   ("; kidney ROIs excluded" if variant == "v2" else ""),
-                   "parameters": {"aorta_box": AORTA_BOX, "liver_dilate_mm": LIVER_DILATE_FOR_VESSEL_MM,
+    if variant in ("v3", "v4", "v5"):
+        aorta_core, aorta_kept = keep_seed_components((vcand & aorta_zone).astype(np.uint8), AORTA_SEEDS, spacing)
+        portal_core, portal_kept = keep_seed_components((vcand & portal_zone).astype(np.uint8), PORTAL_SEEDS, spacing)
+        vessel_core = np.maximum(aorta_core, portal_core).astype(np.uint8)
+        if variant in ("v4", "v5"):
+            # z-continuity closing: bridges the under-opacified acquisition 1 slices along the
+            # vessel paths (all portal-tree misses in the slice-5 measurement were on acquisition 1).
+            closed = sitk.BinaryMorphologicalClosing(sitk_img(vessel_core, spacing), [1, 1, 2])
+            vessel_core = sitk.GetArrayFromImage(closed).astype(np.uint8)
+        kept = {"aorta_subtree": aorta_kept, "portal_subtree": portal_kept}
+    else:
+        vessel_core, kept = keep_seed_components(vcand, AORTA_SEEDS + PORTAL_SEEDS, spacing)
+    chains.append({"effect": ("seed-subtree selection: aorta subtree in the aorta corridor, portal subtree in the liver zone"
+                              if variant in ("v3", "v4", "v5") else "seed-connected components"),
+                   "parameters": {"aorta_box": AORTA_BOX, "aorta_corridor": AORTA_CORRIDOR if variant in ("v3", "v4", "v5") else None,
+                                  "liver_dilate_mm": LIVER_DILATE_FOR_VESSEL_MM,
+                                  "portal_zone_dilate_mm": PORTAL_ZONE_DILATE_MM if variant in ("v3", "v4", "v5") else None,
+                                  "z_continuity_closing_voxels": [1, 1, 2] if variant in ("v4", "v5") else None,
                                   "spine_fill_min_voxels": SPINE_FILL_MIN_VOXELS if variant == "v2" else None,
-                                  "kidney_boxes": list(KIDNEY_BOXES) if variant == "v2" else None},
+                                  "kidney_boxes": list(KIDNEY_BOXES) if variant == "v2" else None,
+                                  "seed_component_patch_voxels": kept},
                    "library": "SimpleITK " + sitk_version})
-    vessel_core, kept = keep_seed_components(vcand, AORTA_SEEDS + PORTAL_SEEDS, spacing)
     bone_all = sitk_fill_holes((hu >= BONE_HU).astype(np.uint8))
     bone_excl = sitk_dilate(bone_all, BONE_MARGIN_MM, spacing)
-    protect = sitk_dilate(vessel_core, 1.0, spacing)
+    protect = sitk_dilate(vessel_core, VESSEL_PROTECT_MM, spacing)
     bone_excl_v = ((bone_excl * (1 - protect)) > 0).astype(np.uint8)
     vessel = sitk_dilate(vessel_core, VESSEL_DILATE_MM[variant], spacing)
     vessel = (vessel * (1 - bone_excl_v)).astype(np.uint8)
-    chains.append({"effect": "bone exclusion: HU at or above 250, holes filled, dilated 3 mm, minus vessel core protected zone; margin dilation",
-                   "parameters": {"bone_HU": BONE_HU, "dilate_mm": BONE_MARGIN_MM, "margin_mm": VESSEL_DILATE_MM[variant],
+    chains.append({"effect": "bone exclusion: HU at or above 250, holes filled, dilated 3 mm, minus vessel core protected zone; keep-out margin dilation",
+                   "parameters": {"bone_HU": BONE_HU, "dilate_mm": BONE_MARGIN_MM, "protect_mm": VESSEL_PROTECT_MM,
+                                  "keepout_margin_mm": VESSEL_DILATE_MM[variant],
                                   "seed_component_patch_voxels": kept},
                    "library": "SimpleITK " + sitk_version})
     return vessel, vessel_core, chains
@@ -444,8 +507,15 @@ def chain_liver_v0(widget, seg_node, organ_id, vol, shape, spacing):
 
 def chain_liver_v1(hu, sm, acq_by_slice, spacing, z_mm_by_slice, variant):
     """Seeded liver growth: phase-aware bounds in the liver ROI and z range, thin-bridge opening,
-    seed components, closing, hole fill, keep largest. The organ-minus-vessel step runs after the
-    vessel chain (see organ_minus_vessel)."""
+    seed components, closing, hole handling, keep largest. The organ-minus-vessel step runs after
+    the vessel chain (see organ_minus_vessel).
+
+    Variant v3 follows the measured SEG label convention (the Liver label excludes the Mass and the
+    vessel labels, evaluation-side overlap 0.0): the global hole fill is replaced by a small-hole
+    fill (lung-base pockets, the gallbladder, and the porta region are not filled), the bone
+    exclusion is spine-centered (the rib dilation cost dome and lateral liver in v2), and the z range
+    covers the full staged extent (the v2 cut cost the inferior liver tip).
+    """
     sitk_version = sitk.Version().VersionString()
     chains = []
     seeds = LIVER_SEEDS_V1 if variant == "v1" else LIVER_SEEDS_V2
@@ -454,16 +524,21 @@ def chain_liver_v1(hu, sm, acq_by_slice, spacing, z_mm_by_slice, variant):
     roi = np.zeros(hu.shape, dtype=np.uint8)
     roi[:, LIVER_ROI["y"][0]:LIVER_ROI["y"][1], LIVER_ROI["x"][0]:LIVER_ROI["x"][1]] = 1
     for k in range(hu.shape[0]):
-        if not (LIVER_Z_MM[0] <= z_mm_by_slice[k] <= LIVER_Z_MM[1]):
+        if not (LIVER_Z_MM[variant][0] <= z_mm_by_slice[k] <= LIVER_Z_MM[variant][1]):
             continue
         lo, hi = LIVER_BOUNDS[int(acq_by_slice[k])]
         cand[k] = ((sm[k] >= lo) & (sm[k] <= hi)).astype(np.uint8)
-    bone_all = sitk_fill_holes((hu >= BONE_HU).astype(np.uint8))
-    bone_excl = sitk_dilate(bone_all, BONE_MARGIN_MM, spacing)
+    if variant == "v3":
+        spine_core = sitk_keep_largest((hu >= BONE_HU).astype(np.uint8))
+        bone_excl = sitk_dilate(sitk_fill_holes(spine_core), 2.0, spacing)
+    else:
+        bone_all = sitk_fill_holes((hu >= BONE_HU).astype(np.uint8))
+        bone_excl = sitk_dilate(bone_all, BONE_MARGIN_MM, spacing)
     cand = ((cand & roi) * (1 - bone_excl)).astype(np.uint8)
     chains.append({"effect": "phase-aware HU bounds on smoothed HU (sigma 1 mm), liver ROI and z range, bone exclusion",
                    "parameters": {"bounds_by_acquisition": {str(a): list(b) for a, b in LIVER_BOUNDS.items()},
-                                  "roi_pixels": LIVER_ROI, "z_range_mm": list(LIVER_Z_MM),
+                                  "roi_pixels": LIVER_ROI, "z_range_mm": list(LIVER_Z_MM[variant]),
+                                  "bone_exclusion": "spine-centered (keep largest calcified component, fill, dilate 2 mm)" if variant == "v3" else "all calcified components filled, dilated 3 mm",
                                   "phase_note": "acquisition 1 late arterial, acquisition 2 portal venous (probe9b HU measurements)"},
                    "library": "SimpleITK " + sitk_version})
     opened = sitk_open(cand, open_mm, spacing)
@@ -472,29 +547,45 @@ def chain_liver_v1(hu, sm, acq_by_slice, spacing, z_mm_by_slice, variant):
                    "parameters": {"open_mm": open_mm, "seeds": seeds, "seed_component_patch_voxels": kept},
                    "library": "SimpleITK " + sitk_version})
     liver = sitk_close(grown, LIVER_CLOSE_MM, spacing)
-    liver = sitk_fill_holes(liver)
-    liver = sitk_keep_largest(liver)
-    chains.append({"effect": "sitk.BinaryMorphologicalClosing, BinaryFillhole, keep largest",
-                   "parameters": {"close_mm": LIVER_CLOSE_MM}, "library": "SimpleITK " + sitk_version})
+    if variant == "v3":
+        liver = sitk_fill_small_holes(liver, SMALL_HOLE_MAX_VOXELS)
+        liver = sitk_keep_largest(liver)
+        chains.append({"effect": "sitk.BinaryMorphologicalClosing, small-hole fill (at most 100 voxels), keep largest",
+                       "parameters": {"close_mm": LIVER_CLOSE_MM, "small_hole_max_voxels": SMALL_HOLE_MAX_VOXELS},
+                       "library": "SimpleITK " + sitk_version})
+    else:
+        liver = sitk_fill_holes(liver)
+        liver = sitk_keep_largest(liver)
+        chains.append({"effect": "sitk.BinaryMorphologicalClosing, BinaryFillhole, keep largest",
+                       "parameters": {"close_mm": LIVER_CLOSE_MM}, "library": "SimpleITK " + sitk_version})
     return liver, chains
 
 
 def organ_minus_vessel(liver, vessel_core, variant, spacing, chains):
     """Organ-minus-vessel separation (the vascular keep-out zone leaves the parenchyma segment).
 
-    Variant v2 subtracts the vessel core eroded 1.5 mm (lumen centers only): the v1 measurement
-    (recall 0.597 with a 3 mm dilated subtraction) showed that the reference liver includes vessel
-    lumens, so the separation is limited to the lumen cores.
+    The SEG Liver label excludes the Mass and the vessel labels (evaluation-side overlap 0.0 in the
+    slice-5 convention notes), so the parenchyma subtracts the segmented vessel tree. Variant v3
+    subtracts the vessel core as segmented (the labeled tree is carved out of the liver label) and
+    keeps the vessel holes open. Variant v2 subtracts the vessel core eroded 1.5 mm (lumen centers
+    only) and v1 the vessel core dilated 3 mm.
     """
     sitk_version = sitk.Version().VersionString()
     if variant == "v1":
         vs = sitk_dilate(vessel_core, VESSEL_DILATE_MM["v1"] + 1.0, spacing)
-    else:
+        out = (liver * (1 - vs)).astype(np.uint8)
+        out = sitk_fill_holes(out)
+        note = "subtract vessel core dilated 3 mm, fill holes"
+    elif variant == "v2":
         vs = sitk_erode(vessel_core, VESSEL_CORE_ERODE_MM, spacing)
-    out = (liver * (1 - vs)).astype(np.uint8)
-    out = sitk_fill_holes(out)
-    chains.append({"effect": "organ-minus-vessel separation (subtract vessel core" +
-                   (" dilated 3 mm" if variant == "v1" else " eroded 1.5 mm") + "), fill holes",
+        out = (liver * (1 - vs)).astype(np.uint8)
+        out = sitk_fill_holes(out)
+        note = "subtract vessel core eroded 1.5 mm, fill holes"
+    else:
+        out = (liver * (1 - vessel_core)).astype(np.uint8)
+        out = sitk_fill_small_holes(out, SMALL_HOLE_MAX_VOXELS)
+        note = "subtract vessel core as segmented, small-hole fill (vessel holes stay open per the disjoint-label convention)"
+    chains.append({"effect": "organ-minus-vessel separation: " + note,
                    "parameters": {"variant": variant}, "library": "SimpleITK " + sitk_version})
     return out
 
@@ -710,6 +801,12 @@ def main():
             "voxel_count": voxels,
             "is_g21_reference": False,
         })
+        if name == VESSEL:
+            prov["keepout_margin_mm"] = VESSEL_DILATE_MM[VESSEL_VARIANT] if VESSEL_VARIANT in VESSEL_DILATE_MM else VESSEL_MARGIN_MM
+            prov["vessel_core_voxels"] = int(vessel_core.sum())
+            prov["keepout_margin_note"] = ("keep-out safety margin of %s mm beyond the segmented vessel boundary, "
+                                           "carried into the FR-RTA-003 envelope parameters (envelope integration "
+                                           "is Phase 3 work)" % prov["keepout_margin_mm"])
         with open(base + "_provenance.json", "w", encoding="utf-8") as f:
             json.dump(prov, f, indent=2)
         for p in (label_path, mesh_path, base + "_provenance.json"):

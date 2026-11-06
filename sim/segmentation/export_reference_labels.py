@@ -8,6 +8,9 @@ read reference/ or the SEG folder (it checks its own input folder and refuses SE
 
 Segment mapping (SEG segment label to reference name): Liver to reference_liver,
 Mass to reference_tumor, Portal vein and Abdominal aorta (union) to reference_vessel.
+The two vessel labels are also exported separately as reference_portal_vein and
+reference_aorta so that evaluate_g21.py can measure the SEG label convention (VAL-031
+requires the convention note with each run). The scored pair stays reference_vessel.
 """
 
 import datetime
@@ -24,6 +27,8 @@ SEG_LABEL_MAP = {
     "reference_liver": ["Liver"],
     "reference_tumor": ["Mass"],
     "reference_vessel": ["Portal vein", "Abdominal aorta"],
+    "reference_portal_vein": ["Portal vein"],
+    "reference_aorta": ["Abdominal aorta"],
 }
 
 

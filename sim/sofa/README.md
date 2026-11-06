@@ -119,12 +119,21 @@ in the scene.
 Directional resistance along the insertion direction, driven by the depth `s`
 of the tip past its entry point:
 
-    K(phi) = K_perp (sin^2 phi + A cos^2 phi),    F_p = K(phi) s
+    F_p = (sin^2 phi + A cos^2 phi) (a1 s + a2 s^2)   (s in mm, F_p in N)
+
+  (slice 2d, owner ruling 2026-11-07; Okamura 2004 Eq. (3), p. 1709)
 
 * `phi` is the angle between the insertion direction and the fiber direction
   (fixed to the x axis).
-* `K_perp = 430 N/m` (cited, see Calibration). `A = 2.0` is an uncited model
-  choice.
+* Liver 1 (default): a1 = 0.0480 N/mm, a2 = 0.0052 N/mm^2. Liver 2 (selectable with
+  `--liver liver2`): a1 = 0.0020 N/mm, a2 = 0.0023 N/mm^2. Both are cited (Okamura
+  2004, p. 1709; bovine liver, ex vivo, 3 mm/s).
+* `A = 2.0` is an uncited model choice. It multiplies the polynomial, and it is 1.0
+  at 0 degrees and 1.25 at 30 degrees.
+* K_perp = 430 N/m (Roesthuis 2011) is retired from the axial role. The model has no
+  lateral term, so K_perp is unused. It is recorded as the lateral phantom value.
+* Trigger depths (F_p = 0.164 N, angle 0 degrees): Liver 1 at 2.65 mm, Liver 2 at 8.02 mm
+  (beyond the 8 mm approach). At 30 degrees: 2.21 mm (Liver 1) and 7.13 mm (Liver 2).
 * The force acts opposite the insertion on the tool and is distributed to the
   four organ nodes nearest the entry region.
 
@@ -143,7 +152,7 @@ A cut is requested by the scene controller at tick t when all of these hold:
 * the tool tip is inside the organ (above),
 * the penetration `s` past the entry point is at least `cut_min_depth_mm` (1.0 mm,
   uncited choice),
-* the axial puncture force `F_p = K(phi) s` is at least `cut_force_n`, which is
+* the axial puncture force `F_p` (above) is at least `cut_force_n`, which is
   `G_c w` with `G_c = 164 J/m^2` (cited) and `w = 1.0 mm` (the tool width,
   uncited choice). This gives `F_cut = 0.164 N`,
 * the tip path from tick t-1 to tick t crosses at least one tetrahedron. The path
@@ -216,7 +225,8 @@ suite (1000 trials, with dissection and cutting in slice 2).
 
 | Parameter | Value | Status | Source |
 |---|---|---|---|
-| `puncture_k_perp` (K_perp) | 430 N/m | cited, verified against the full text (Roesthuis 2011, p. 2563); a lateral phantom stiffness used as an axial stiffness (mapping limit, see Verified citations) | Roesthuis RJ, van Veen YRJ, Jahya A, Misra S. Mechanics of needle-tissue interaction. IROS 2011. Ke = 430 N/m in the gelatine phantom simulation (Fig. 12 label, from a search excerpt only). |
+| `puncture_k_perp` (K_perp) | 430 N/m | cited, verified (Roesthuis 2011, p. 2563); UNUSED in the model since slice 2d (lateral phantom value, retired from the axial role) |
+| `puncture_a1_n_per_mm`, `puncture_a2_n_per_mm2` | 0.0480, 0.0052 (Liver 1 default); 0.0020, 0.0023 (Liver 2) | cited, Okamura 2004 p. 1709 (bovine liver, 3 mm/s); axial puncture law since slice 2d | Okamura 2004 | Roesthuis RJ, van Veen YRJ, Jahya A, Misra S. Mechanics of needle-tissue interaction. IROS 2011. Ke = 430 N/m in the gelatine phantom simulation (Fig. 12 label, from a search excerpt only). |
 | `contact_force_cap_n` | 1.0 N per tool point | uncited model choice (slice 2b) | none |
 | `puncture_anisotropy` (A) | 2.0 | uncited model choice | none |
 | `contact_stiffness` (k) | 100 N/m | uncited model choice | none found |
@@ -280,8 +290,8 @@ phantom simulation (Roesthuis). The model applies it as an axial puncture stiffn
 (a1 z + a2 z^2 = 0.384 + 0.333) and 0.163 N for liver 2 (0.016 + 0.147). The model
 gives 3.44 N at 8 mm (430 N/m times 8 mm). The model is therefore stiffer than the
 liver polynomial by a factor of about 4.8 (liver 1) and 21 (liver 2) at that depth. The
-liver polynomial is the closer construct for the axial case. Replacing K_perp is an
-owner decision, and it is not made in this slice.
+liver polynomial is the closer construct for the axial case. Resolved by the owner
+ruling of 2026-11-07: the polynomial replaces K_perp in the axial role (slice 2d).
 
 Transfer limitations. The gelatine and ex vivo bovine values transfer to in vivo human
 liver with documented limits: no perfusion or vascular pressure (Okamura 2004, p. 1715,
@@ -315,7 +325,13 @@ Per-trial checks (a trial passes when all nine pass):
 * `zero_missed_contacts`: no tool point has a full-boundary swept hit without a contact
   record at that tick. The full-boundary test is independent of the culled candidate
   set.
-* `finite_wrench` (episode rule, owner ruling 2026-11-06): the wrench is finite at
+* `analytic_balance` (slice 2d, owner ruling 2026-11-07, replaces `finite_wrench`):
+  at every contact step the recorded tool force matches the analytic prediction
+  (per-point forces summed, minus the puncture term along the insertion direction)
+  within 1e-6 N plus 1e-6 relative; each point force is at most F_cap; the summed
+  norm is at most the sum of point magnitudes; and a zero-peak episode passes only
+  where the analytic prediction is zero. The superseded slice-2c episode rule was:
+  the wrench is finite at
   every contact step, and the peak 6-vector wrench norm of each contact episode is
   strictly positive. An episode is a maximal run of consecutive contact steps. Episode
   peaks are in each trial's evidence (`episodes`).

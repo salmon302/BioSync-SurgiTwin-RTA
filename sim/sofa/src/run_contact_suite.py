@@ -12,9 +12,11 @@ Per-trial checks:
 * zero_tunneling: no step has the tip inside the organ with zero contact points.
 * zero_missed_contacts: no tool point has a full-boundary swept hit without a
   contact record at that tick.
-* finite_wrench (episode rule, slice 2c): the wrench is finite at every contact step,
-  and the peak wrench norm of each contact episode (a maximal run of consecutive
-  contact steps) is strictly positive.
+* analytic_balance (slice 2d): at every contact step the recorded tool force equals the
+  analytic prediction (per-point forces summed, minus the puncture term along the
+  insertion direction) within 1e-6 N plus 1e-6 relative. Each per-point force is at
+  most the cap, the summed force norm is at most the sum of point magnitudes, and a
+  zero-peak contact episode passes only where the analytic prediction is zero there.
 * topology_integrity: every cut passes cut_topology.check_integrity (no inverted,
   orphaned, non-manifold, or disconnected elements), the driver's crossed set
   matches the scene's crossed set, and the mesh stays valid through the trial.
@@ -79,6 +81,10 @@ CLEARANCE_MM = 30.0
 SPEEDS_MM_S = [10, 20, 40, 60, 80, 100, 120, 150, 180, 200]
 ANGLES_DEG = [0.0, 10.0, 15.0, 20.0, 30.0]
 ENTRY_OFFSETS_MM = [(0.0, 0.0, 0.0), (0.0, 0.0, 3.0)]
+# Pre-registered G2.3 gate grid (log impl-2026-11-07-task23-slice2d-rulings.md): 10 speeds,
+# 10 entry angles (0 to 30 degrees in 10 equal steps), 10 entry offsets (0 to 4.5 mm in z).
+GATE_ANGLES_DEG = [round(30.0 * k / 9.0, 4) for k in range(10)]
+GATE_ENTRY_OFFSETS_MM = [(0.0, 0.0, 0.5 * k) for k in range(10)]
 MAX_SEGMENTS = 200
 BRIDGE_HEADER = [
     "tick", "time_s", "pos_x", "pos_y", "pos_z",
@@ -90,15 +96,25 @@ DIAG_HEADER = [
     "tick", "time_s", "contact_points", "contact_force_n", "puncture_force_n", "depth_m",
     "inside", "tip_x", "tip_y", "tip_z", "mesh_tip_x", "mesh_tip_y", "mesh_tip_z",
     "organ_top_y", "swept_hits", "full_swept_points", "missed_points", "crossed_tets", "cut_requested",
+    "analytic_fx", "analytic_fy", "analytic_fz", "sum_abs_point_force_n", "max_point_force_n",
 ]
 CHECKS = [
-    "contact_detected", "zero_tunneling", "zero_missed_contacts", "finite_wrench",
+    "contact_detected", "zero_tunneling", "zero_missed_contacts", "analytic_balance",
     "topology_integrity", "capture_schema", "wrench_continuity", "culling_reduction", "exit_clean",
 ]
+BALANCE_ABS_TOL_N = 1e-6
+BALANCE_REL_TOL = 1e-6
+
+# Okamura 2004 pre-puncture stiffness polynomial f(z) = a1 z + a2 z^2 (z in mm, f in N), p. 1709.
+OKAMURA_LIVER_SETS = {
+    "liver1": {"a1_n_per_mm": 0.0480, "a2_n_per_mm2": 0.0052},
+    "liver2": {"a1_n_per_mm": 0.0020, "a2_n_per_mm2": 0.0023},
+}
 
 # Calibrated and placeholder constants. Sources and status are in sim/sofa/README.md.
 CALIBRATION = {
-    "puncture_k_perp": 430.0,
+    "puncture_liver_set": "liver1",
+    "puncture_k_perp_unused": 430.0,
     "puncture_anisotropy": 2.0,
     "contact_stiffness": 100.0,
     "contact_damping": 0.5,
@@ -126,7 +142,8 @@ def base_config():
         "contact_stiffness": CALIBRATION["contact_stiffness"],
         "contact_damping": CALIBRATION["contact_damping"],
         "contact_m": CALIBRATION["contact_m"],
-        "puncture_k_perp": CALIBRATION["puncture_k_perp"],
+        "puncture_a1_n_per_mm": OKAMURA_LIVER_SETS[CALIBRATION["puncture_liver_set"]]["a1_n_per_mm"],
+        "puncture_a2_n_per_mm2": OKAMURA_LIVER_SETS[CALIBRATION["puncture_liver_set"]]["a2_n_per_mm2"],
         "puncture_anisotropy": CALIBRATION["puncture_anisotropy"],
         "fiber_dir": [1.0, 0.0, 0.0],
         "puncture_nodes": 4,
@@ -159,17 +176,21 @@ def quiet_host_snapshot():
         return {"error": result.stderr.strip()[:200]}
 
 
-def trial_plan(limit=None):
+def trial_plan(limit=None, grid="pilot"):
     plan = []
     travel_mm = CLEARANCE_MM + DEPTH_MM
     k = 0
+    if grid == "gate":
+        angles, entries, prefix = GATE_ANGLES_DEG, GATE_ENTRY_OFFSETS_MM, "G"
+    else:
+        angles, entries, prefix = ANGLES_DEG, ENTRY_OFFSETS_MM, "T"
     for speed in SPEEDS_MM_S:
-        for angle in ANGLES_DEG:
-            for entry in ENTRY_OFFSETS_MM:
+        for angle in angles:
+            for entry in entries:
                 k += 1
                 approach_steps = int(math.ceil(travel_mm / 1000.0 / (speed / 1000.0) / DT))
                 plan.append({
-                    "id": f"T{k:03d}",
+                    "id": f"{prefix}{k:04d}" if grid == "gate" else f"T{k:03d}",
                     "speed_mm_s": speed,
                     "angle_deg": angle,
                     "entry_offset_mm": list(entry),
@@ -337,8 +358,31 @@ def check_trial(trial, result, out_dir):
             episodes.append([i])
     episode_peaks = [float(np.max(np.linalg.norm(wrench[ep], axis=1))) for ep in episodes]
     contact_finite = all(np.isfinite(wrench[i]).all() for i in contact_steps)
-    episodes_nonzero = bool(episodes) and all(p > 0.0 for p in episode_peaks)
-    finite_wrench = bool(np.isfinite(wrench).all()) and contact_finite and episodes_nonzero
+    angle = math.radians(trial["angle_deg"])
+    d_dir = np.array([math.sin(angle), -math.cos(angle), 0.0])
+    analytic = np.array([[float(r["analytic_fx"]), float(r["analytic_fy"]), float(r["analytic_fz"])]
+                         for r in diag])
+    puncture = np.array([float(r["puncture_force_n"]) for r in diag])
+    sum_abs = np.array([float(r["sum_abs_point_force_n"]) for r in diag])
+    max_pt = np.array([float(r["max_point_force_n"]) for r in diag])
+    predicted = analytic - puncture[:, None] * d_dir[None, :]
+    residual = np.linalg.norm(wrench[:, :3] - predicted, axis=1)
+    tol = BALANCE_ABS_TOL_N + BALANCE_REL_TOL * np.linalg.norm(predicted, axis=1)
+    balanced_steps = [i for i in contact_steps if residual[i] <= tol[i]]
+    balance_all = len(balanced_steps) == len(contact_steps)
+    cap_ok = bool(np.all(max_pt <= CALIBRATION["contact_force_cap_n"] + 1e-9))
+    triangle_ok = bool(np.all(np.linalg.norm(analytic, axis=1) <= sum_abs + 1e-6))
+    zero_episodes_ok = all(
+        float(np.max(np.linalg.norm(predicted[ep], axis=1))) <= float(np.max(tol[ep]))
+        for ep, p in zip(episodes, episode_peaks) if p == 0.0)
+    analytic_balance = (bool(np.isfinite(wrench).all()) and contact_finite and balance_all and cap_ok
+                        and triangle_ok and zero_episodes_ok and bool(episodes))
+    residual_evidence = [{"tick": int(i), "analytic_n": [round(x, 9) for x in analytic[i]],
+                          "recorded_force_n": [round(x, 9) for x in wrench[i, :3]],
+                          "predicted_force_n": [round(x, 9) for x in predicted[i]],
+                          "residual_n": float(residual[i]), "tolerance_n": float(tol[i])}
+                         for ep, p in zip(episodes, episode_peaks) if p == 0.0 for i in ep]
+    max_residual = float(np.max(residual[contact_steps])) if contact_steps else 0.0
 
     cut_ticks = [c["cut_tick"] for c in result["cuts"]]
     cut_integrity_ok = all(c["integrity_ok"] for c in result["cuts"]) and not result["integrity_failures"]
@@ -355,7 +399,7 @@ def check_trial(trial, result, out_dir):
     failures["contact_detected"] = not contact_steps
     failures["zero_tunneling"] = len(tunneling)
     failures["zero_missed_contacts"] = sum(int(row["missed_points"]) for row in diag)
-    failures["finite_wrench"] = not finite_wrench
+    failures["analytic_balance"] = not analytic_balance
     failures["topology_integrity"] = not cut_integrity_ok
     failures["capture_schema"] = not schema_ok
     failures["wrench_continuity"] = not continuity_ok
@@ -366,7 +410,7 @@ def check_trial(trial, result, out_dir):
         "contact_detected": not failures["contact_detected"],
         "zero_tunneling": failures["zero_tunneling"] == 0,
         "zero_missed_contacts": failures["zero_missed_contacts"] == 0,
-        "finite_wrench": not failures["finite_wrench"],
+        "analytic_balance": not failures["analytic_balance"],
         "topology_integrity": not failures["topology_integrity"],
         "capture_schema": not failures["capture_schema"],
         "wrench_continuity": not failures["wrench_continuity"],
@@ -383,6 +427,8 @@ def check_trial(trial, result, out_dir):
         "step_change_at_cut_n": [round(x, 6) for x in step_changes],
         "episodes": [{"start": int(ep[0]), "length": len(ep), "peak_wrench_norm": round(p, 6)}
                      for ep, p in zip(episodes, episode_peaks)],
+        "max_balance_residual_n": max_residual,
+        "zero_peak_episode_residuals": residual_evidence[:40],
     }
     summary = {
         "trial": trial["id"],
@@ -417,13 +463,18 @@ def main(argv=None):
     parser.add_argument("--label", default=None, help="run label (default: UTC timestamp)")
     parser.add_argument("--limit", type=int, default=None, help="run only the first N trials of the grid")
     parser.add_argument("--workers", type=int, default=3, help="trials run in parallel")
+    parser.add_argument("--grid", choices=["pilot", "gate"], default="pilot",
+                        help="trial grid: pilot (100 trials) or gate (1000 trials, pre-registered)")
+    parser.add_argument("--liver", choices=sorted(OKAMURA_LIVER_SETS), default="liver1",
+                        help="Okamura 2004 pre-puncture stiffness set (default liver1)")
     args = parser.parse_args(argv)
+    CALIBRATION["puncture_liver_set"] = args.liver
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     label = args.label or stamp
     run_dir = LOG_DIR / f"task23-cut-{label}"
     run_dir.mkdir(parents=True, exist_ok=True)
     snapshot = quiet_host_snapshot()
-    plan = trial_plan(args.limit)
+    plan = trial_plan(args.limit, args.grid)
 
     def work(trial):
         raw = run_trial(run_dir, trial)
@@ -445,6 +496,8 @@ def main(argv=None):
     summary = {
         "schema": "task23-cut-pilot-v1",
         "label": label,
+        "grid": args.grid,
+        "liver_set": args.liver,
         "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "dt_s": DT,
         "rate_hz": RATE_HZ,

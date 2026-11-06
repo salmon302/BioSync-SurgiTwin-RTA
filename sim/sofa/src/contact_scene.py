@@ -79,6 +79,7 @@ DIAG_HEADER = [
     "tick", "time_s", "contact_points", "contact_force_n", "puncture_force_n", "depth_m",
     "inside", "tip_x", "tip_y", "tip_z", "mesh_tip_x", "mesh_tip_y", "mesh_tip_z",
     "organ_top_y", "swept_hits", "full_swept_points", "missed_points", "crossed_tets", "cut_requested",
+    "analytic_fx", "analytic_fy", "analytic_fz", "sum_abs_point_force_n", "max_point_force_n",
 ]
 
 
@@ -289,7 +290,8 @@ class ContactController(Sofa.Core.Controller):
         self.c = float(cfg["contact_damping"])
         self.margin = float(cfg["contact_m"])
         self.force_cap = float(cfg["contact_force_cap_n"])
-        self.puncture_k = float(cfg["puncture_k_perp"])
+        self.a1 = float(cfg["puncture_a1_n_per_mm"])
+        self.a2 = float(cfg["puncture_a2_n_per_mm2"])
         self.anisotropy = float(cfg["puncture_anisotropy"])
         self.fiber = np.array(cfg["fiber_dir"], dtype=float)
         self.fiber = self.fiber / np.linalg.norm(self.fiber)
@@ -303,7 +305,9 @@ class ContactController(Sofa.Core.Controller):
         self.tets = tets
         cosf = float(np.dot(self.d, self.fiber))
         sin2 = 1.0 - cosf * cosf
-        self.k_eff = self.puncture_k * (sin2 + self.anisotropy * cosf * cosf)
+        self.anisotropy_factor = sin2 + self.anisotropy * cosf * cosf
+        self.sum_abs_point_force = 0.0
+        self.max_point_force = 0.0
         self.tick = int(resume["tick_next"]) if resume else 0
         self.last_inside = bool(resume["last_inside"]) if resume else False
         self.outside_ticks = int(resume["outside_ticks"]) if resume else 0
@@ -363,6 +367,8 @@ class ContactController(Sofa.Core.Controller):
         self.contact_force = np.zeros(3)
         self.contact_torque = np.zeros(3)
         self.contact_records = []
+        self.sum_abs_point_force = 0.0
+        self.max_point_force = 0.0
         velocity = (pts - self.prev_pts) / self.dt if self.prev_pts is not None else np.zeros_like(pts)
         for i in range(pts.shape[0]):
             cand = active[i].copy()
@@ -398,6 +404,8 @@ class ContactController(Sofa.Core.Controller):
                 f = f_mag * n
                 self.contact_force += f
                 self.contact_torque += np.cross(pts[i] - tip, f)
+                self.sum_abs_point_force += f_mag
+                self.max_point_force = max(self.max_point_force, f_mag)
                 self.contact_points += 1
                 weights = np.clip(bary[i, t], 0.0, None)
                 weights = weights / weights.sum()
@@ -434,12 +442,16 @@ class ContactController(Sofa.Core.Controller):
             for node, w in zip(tri, weights):
                 forces[index_of[int(node)]] += np.array(f_neg) * w
 
+    def puncture_force(self, depth_m):
+        s = depth_m * 1e3
+        return self.anisotropy_factor * (self.a1 * s + self.a2 * s * s)
+
     def apply_puncture(self, tip, pos):
         if not self.last_inside or self.entry is None:
             self.last_puncture = 0.0
             return
         self.depth = max(float(np.dot(tip - self.entry, self.d)), 0.0)
-        self.last_puncture = self.k_eff * self.depth
+        self.last_puncture = self.puncture_force(self.depth)
 
     def puncture_reaction(self):
         out = {}
@@ -456,7 +468,7 @@ class ContactController(Sofa.Core.Controller):
         if self.tick + 1 >= self.total_steps:
             return None
         depth_now = max(float(np.dot(tip - self.entry, self.d)), 0.0)
-        force_now = self.k_eff * depth_now
+        force_now = self.puncture_force(depth_now)
         if depth_now < self.cut_min_depth or force_now < self.cut_force:
             return None
         crossed = tets_containing(path_samples(self.prev_tip, tip, CUT_SAMPLES), pos, self.tets)
@@ -519,6 +531,8 @@ class ContactController(Sofa.Core.Controller):
             f"{mesh_tip[0]:.9f}", f"{mesh_tip[1]:.9f}", f"{mesh_tip[2]:.9f}",
             f"{float(pos[:, 1].max()):.9f}", self.swept_hits,
             self.full_swept_points, self.missed_points, crossed_count, int(cut is not None),
+            f"{self.contact_force[0]:.9f}", f"{self.contact_force[1]:.9f}", f"{self.contact_force[2]:.9f}",
+            f"{self.sum_abs_point_force:.9f}", f"{self.max_point_force:.9f}",
         ])
         self.prev_tip = tip.copy()
         self.tick += 1

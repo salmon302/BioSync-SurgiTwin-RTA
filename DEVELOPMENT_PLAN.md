@@ -442,7 +442,7 @@ Gateway-numbered files keep their names (for example `test_oq6_ema_convergence.p
 
 ### 5.5 Evidence Landing
 
-Each phase lands an implementation log at `SNDEV/docs/impl-YYYY-MM-DD-<ticket>.md` before its code is written. Captured test output goes to `SNDEV/logs/`, which is gitignored. Gate results are recorded as PASS or FAIL with the command and the evidence path. Sign-off identity (owner ruling 2026-11-06): the commit sign-off email is the repository git identity, seth.nenniger@ucf.edu; commits before that ruling carry a legacy sign-off address and are accepted as-is, with no history rewrite.
+Each phase lands an implementation log at `SNDEV/docs/impl-YYYY-MM-DD-<ticket>.md` before its code is written. Captured test output goes to `SNDEV/logs/`, which is gitignored. Gate results are recorded as PASS or FAIL with the command and the evidence path. Sign-off identity (owner ruling 2026-11-06): this project belongs to sethnenninger@gmail.com. Commit author and sign-off use that address (the commit is made with `git -c user.email=sethnenninger@gmail.com` so the author matches the sign-off), and the repository git config is left at seth.nenniger@ucf.edu after any commit. Commits made before this ruling carry mixed author and sign-off addresses and are accepted as-is, with no history rewrite.
 
 ---
 

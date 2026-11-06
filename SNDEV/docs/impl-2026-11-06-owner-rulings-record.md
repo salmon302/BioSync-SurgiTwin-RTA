@@ -36,3 +36,7 @@ Scope: no change to `SRS.md`, `vv/`, `sim/sofa/`, `sim/bridge/`, `sim/fmi/`, `en
 Verification: the change is documentation only. The build, lint, and test gates are not affected and were not run. The edited rows were checked against the source record by reading the cited files. The style constraints of AGENTS.md were checked by text search on the edited files for banned words, em dashes, and curly quotes.
 
 Commit: path-scoped commit of the four files above, with sign-off `Signed-off-by: Seth Nenninger <seth.nenniger@ucf.edu>`. The commit hash is recorded in the final report of the session that made the commit. Nothing was pushed.
+
+## Correction (2026-11-06): ruling 1 restated
+
+The ruling-1 paragraph above was written from an inverted reading and is superseded by this correction. The owner clarified on 2026-11-06: the project belongs to sethnenninger@gmail.com. Commit author and sign-off use that address, made with `git -c user.email=sethnenninger@gmail.com` so the author matches the sign-off; the repository git config is left at seth.nenniger@ucf.edu after any commit. Commits made before this ruling carry mixed author and sign-off addresses and are accepted as-is, with no history rewrite. The ruling-2 licensing paragraph above stands as written. The AGENTS.md section 7 template was restored to the gmail sign-off with the per-commit override convention on 2026-11-06.

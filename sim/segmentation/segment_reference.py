@@ -70,10 +70,10 @@ VESSEL_C = 6.0
 VESSEL_S_FLOOR = 4.0
 VESSEL_S_FLOOR_V4 = 5.0
 VESSEL_T = {"v1": 0.5, "v2": 0.6, "v3": 0.35, "v4": 0.5, "v5": 0.6}
-LIVER_OPEN_MM = {"v1": 3.0, "v2": 2.0, "v3": 2.0}
+LIVER_OPEN_MM = {"v1": 3.0, "v2": 2.0, "v3": 2.0, "v4": 2.0}
 LIVER_CLOSE_MM = 3.0
 LIVER_ROI = {"x": (30, 350), "y": (50, 350)}
-LIVER_Z_MM = {"v1": (-390.0, -238.0), "v2": (-390.0, -238.0), "v3": (-416.0, -238.0)}
+LIVER_Z_MM = {"v1": (-390.0, -238.0), "v2": (-390.0, -238.0), "v3": (-416.0, -238.0), "v4": (-416.0, -238.0)}
 LIVER_DILATE_FOR_VESSEL_MM = 8.0
 AORTA_BOX = {"x": (235, 335), "y": (170, 300)}
 # Slice-5 corridors (seed-subtree selection). The aorta corridor (x 250 to 305, y 195 to 285) follows
@@ -110,7 +110,7 @@ PORTAL_SEEDS = [(23, 215, 228), (19, 215, 228)]
 # acquisition (see SNDEV/docs/impl-2026-11-05-task21-slice4-method.md), so the segment is empty.
 TUMOR_CONFIRMED_FOCUS = None
 
-LIVER_VARIANT = os.environ.get("SURGITWIN_LIVER_VARIANT", "v3")
+LIVER_VARIANT = os.environ.get("SURGITWIN_LIVER_VARIANT", "v4")
 TUMOR_VARIANT = os.environ.get("SURGITWIN_TUMOR_VARIANT", "v1")
 VESSEL_VARIANT = os.environ.get("SURGITWIN_VESSEL_VARIANT", "v5")
 
@@ -528,7 +528,7 @@ def chain_liver_v1(hu, sm, acq_by_slice, spacing, z_mm_by_slice, variant):
             continue
         lo, hi = LIVER_BOUNDS[int(acq_by_slice[k])]
         cand[k] = ((sm[k] >= lo) & (sm[k] <= hi)).astype(np.uint8)
-    if variant == "v3":
+    if variant in ("v3", "v4"):
         spine_core = sitk_keep_largest((hu >= BONE_HU).astype(np.uint8))
         bone_excl = sitk_dilate(sitk_fill_holes(spine_core), 2.0, spacing)
     else:
@@ -547,7 +547,7 @@ def chain_liver_v1(hu, sm, acq_by_slice, spacing, z_mm_by_slice, variant):
                    "parameters": {"open_mm": open_mm, "seeds": seeds, "seed_component_patch_voxels": kept},
                    "library": "SimpleITK " + sitk_version})
     liver = sitk_close(grown, LIVER_CLOSE_MM, spacing)
-    if variant == "v3":
+    if variant in ("v3", "v4"):
         liver = sitk_fill_small_holes(liver, SMALL_HOLE_MAX_VOXELS)
         liver = sitk_keep_largest(liver)
         chains.append({"effect": "sitk.BinaryMorphologicalClosing, small-hole fill (at most 100 voxels), keep largest",
@@ -581,6 +581,17 @@ def organ_minus_vessel(liver, vessel_core, variant, spacing, chains):
         out = (liver * (1 - vs)).astype(np.uint8)
         out = sitk_fill_holes(out)
         note = "subtract vessel core eroded 1.5 mm, fill holes"
+    elif variant == "v4":
+        # VAL-032 liver envelope convention: the scoring reference is the liver label with the
+        # tumor and vessel carve-outs filled, so the segmented vessel carve-outs are filled into
+        # the organ instead of subtracted (v3 subtracted them under the disjoint-label convention).
+        filled = sitk_fill_holes(liver)
+        holes = ((filled > 0) & (liver == 0)).astype(np.uint8)
+        vs = sitk_dilate(vessel_core, 2.0, spacing)
+        out = ((liver > 0) | ((holes > 0) & (vs > 0))).astype(np.uint8)
+        out = sitk_keep_largest(out)
+        note = ("organ-envelope fill: vessel carve-outs filled into the organ (VAL-032 envelope convention), "
+                "vessel core dilated 2 mm marks the carve-outs")
     else:
         out = (liver * (1 - vessel_core)).astype(np.uint8)
         out = sitk_fill_small_holes(out, SMALL_HOLE_MAX_VOXELS)

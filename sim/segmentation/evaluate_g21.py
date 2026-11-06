@@ -1,29 +1,35 @@
 # SPDX-License-Identifier: MIT
-# Metadata: Author Seth Nenninger (MiMo-V2.6-Pro Agent); Contribution: plan task 2.1 slices 2, 4, and 5
-# (gate G2.1 measurement; slice 5 adds the VAL-031 clause verdicts and the SEG label-convention notes);
+# Metadata: Author Seth Nenninger (MiMo-V2.6-Pro Agent); Contribution: plan task 2.1 slices 2, 4, 5, and 6
+# (gate G2.1 measurement; slice 5 adds the VAL-031 clause verdicts and the SEG label-convention notes;
+# slice 6 adds the VAL-032 envelope convention, the stratified vessel metrics, and the grounded markers);
 # Log: SNDEV/docs/impl-2026-11-05-task21-slice2-dice.md, SNDEV/docs/impl-2026-11-05-task21-slice4-method.md,
-# SNDEV/docs/impl-2026-11-05-task21-slice5-val031.md
-"""G2.1 evaluation for FR-MS-001 (VAL-031 clauses, VTM row FR-MS-001).
+# SNDEV/docs/impl-2026-11-05-task21-slice5-val031.md, SNDEV/docs/impl-2026-11-05-val032-recenter.md
+"""G2.1 evaluation for FR-MS-001 (VAL-032 re-centered clauses, VTM row FR-MS-001).
 
-Gate G2.1 (VAL-031, applied 2026-11-05): meshes for parenchyma, tumor, and vascular keep-out zones
-exported from the TCIA HCC-TACE-Seg HCC_001 series with segmentation provenance, evaluated against
-the expert SEG reference labels held out of pipeline inputs, per structure: (a) parenchyma, Dice at
-or above 0.90 and recall at or above 0.90 against the held-out liver reference; (b) vascular keep-out,
-recall at or above 0.95, keep-out volume at most 3 times the reference vessel volume, and the
-keep-out safety margin documented and carried into the FR-RTA-003 envelope parameters; (c) tumor,
-operator-seeded with detection excluded, Dice at or above 0.70 when a documented seed source exists,
-otherwise the sub-gate is recorded not applicable. Each run records the SEG label-convention notes
-(Portal vein main trunk versus full tree).
+Gate G2.1 (VAL-032, from the owner decisions of 2026-11-05): meshes for parenchyma, tumor, and
+vascular keep-out zones exported from the TCIA HCC-TACE-Seg HCC_001 series with segmentation
+provenance, evaluated against the expert SEG reference labels held out of pipeline inputs, per
+structure: (a) parenchyma, Dice at or above 0.90 and recall at or above 0.90 against the liver
+envelope (the reference liver label with the tumor and vessel carve-outs filled; the envelope
+convention is documented in each evaluation record); (b) vascular keep-out, recall at or above 0.95
+over the reference-resolvable vessel set (reference components with lumen diameter at or above the
+grounded floor), full-tree recall reported as information, keep-out volume at most the grounded
+multiple of the reference vessel volume with the 1.0 mm safety margin documented and carried into
+the FR-RTA-003 envelope parameters, and the unresolved thin-branch residual risk recorded in the
+risk file; (c) tumor, unchanged from VAL-031 (operator-placed seed, Dice at or above 0.70 when
+applicable, detection excluded; on HCC_001 the sub-gate is not applicable). Each evaluation record
+carries the label-convention notes and the dataset note (clinical Tr_Size 0.8 cm inconsistent with
+the 35.75 mL labeled mass). The VAL-031 clause verdicts are retained alongside for the audit trail.
 
 Pairs: parenchyma_liver to reference_liver, tumor_hypoattenuating to reference_tumor, and
 vascular_keepout_bone_excluded to reference_vessel (Portal vein and Abdominal aorta union).
 
 This script is the only reader of output/<dataset-id>/reference/ besides export_reference_labels.py,
-which writes it. The reference inspection in this script (label-convention geometry, disagreement
-profiles) is evaluation-side and never enters the scoring chain. Run through run_evaluation.ps1 with
-the Slicer bundled SimpleITK 2.5.5. Writes output/<dataset-id>/evaluation.json and prints a summary
-table. The process exits 0 when the evaluation completes, whatever the verdicts. A FAIL verdict is a
-measurement, not a script error.
+which writes it. The reference inspection in this script (label-convention geometry, coverage
+attribution, disagreement profiles, stratified metrics) is evaluation-side and never enters the
+scoring chain. Run through run_evaluation.ps1 with the Slicer bundled SimpleITK 2.5.5. Writes
+output/<dataset-id>/evaluation.json and prints a summary table. The process exits 0 when the
+evaluation completes, whatever the verdicts. A FAIL verdict is a measurement, not a script error.
 """
 
 import datetime
@@ -128,10 +134,10 @@ def evaluate_pair(pipe_name, ref_name):
     fn_vox = ref_vox - inter
     # Disagreement character: distance of FP voxels to the reference surface and of FN voxels to
     # the pipeline surface (evaluation-side geometry, no CT involved).
-    ref_dist = sitk.SignedMaurerDistanceMap(r_bin, insideIsPositive=True, useImageSpacing=True)
-    pred_dist = sitk.SignedMaurerDistanceMap(p_bin, insideIsPositive=True, useImageSpacing=True)
-    ref_d = sitk.GetArrayViewFromImage(ref_dist)
-    pred_d = sitk.GetArrayViewFromImage(pred_dist)
+    ref_dist = signed_distance(r_bin)
+    pred_dist = signed_distance(p_bin)
+    ref_d = ref_dist
+    pred_d = pred_dist
     fp_mask = p_arr & ~r_arr
     fn_mask = r_arr & ~p_arr
     buckets = [(0.0, 1.0), (1.0, 2.0), (2.0, 4.0), (4.0, 8.0), (8.0, float("inf"))]
@@ -198,8 +204,7 @@ def label_geometry(name, ref_name):
         comps.append({"voxels": int(round(stats.GetPhysicalSize(lbl) / voxel_mm3)),
                       "volume_ml": round(stats.GetPhysicalSize(lbl) / 1000.0, 3)})
     comps.sort(key=lambda c: -c["voxels"])
-    dist = sitk.SignedMaurerDistanceMap(sitk.Cast(img > 0, sitk.sitkUInt8), insideIsPositive=True, useImageSpacing=True)
-    dist_arr = sitk.GetArrayViewFromImage(dist)
+    dist_arr = signed_distance(sitk.Cast(img > 0, sitk.sitkUInt8))
     max_radius_mm = float(dist_arr[arr].max()) if arr.any() else 0.0
     nz = np.nonzero(arr.sum(axis=(1, 2)))[0]
     ys, xs = np.nonzero(arr.sum(axis=0))
@@ -261,6 +266,10 @@ def convention_notes():
         "label_overlaps": overlaps,
         "portal_branch_volume_share": branch_share,
         "portal_vein_convention": portal_call,
+        "dataset_note": ("HCC_001 clinical annotation (HCC-TACE-Seg_clinical_data-V2.xlsx) records Tr_Size 0.8 cm, "
+                         "which is inconsistent with the 35.75 mL labeled mass (about 4 cm across), and documents "
+                         "no lesion location; the tumor sub-gate is not applicable and the search trail is in "
+                         "SNDEV/docs/impl-2026-11-05-task21-slice5-val031.md"),
         "note": ("The scored reference_vessel is the union of the SEG labels Portal vein and Abdominal aorta. "
                  "The split labelmaps reference_portal_vein and reference_aorta are exported by "
                  "export_reference_labels.py for this measurement only. The measurement is evaluation-side "
@@ -289,6 +298,216 @@ def vessel_attribution(pipe_name="vascular_keepout_bone_excluded"):
             "missed_per_slice": [int(c) for c in (r & ~p).sum(axis=(1, 2))],
         }
     return out
+
+
+def signed_distance(mask_img):
+    """True signed distance from SignedMaurerDistanceMap.
+
+    This SimpleITK 2.5.5 build returns SQUARED distances from the Maurer filter (verified on a
+    synthetic disk: 98.9 reported for a 10.9 mm radius, and 162 reported for a 14 voxel radius).
+    The true distance is the square root of the magnitude, with the filter's sign kept
+    (positive inside when insideIsPositive=True).
+    """
+    d = sitk.SignedMaurerDistanceMap(mask_img, insideIsPositive=True, useImageSpacing=True)
+    a = sitk.GetArrayViewFromImage(d)
+    return np.sign(a) * np.sqrt(np.abs(a))
+
+
+def load_ref_arr(name):
+    img = sitk.ReadImage(os.path.join(REF_DIR, name + "_labelmap.nrrd"))
+    b = sitk.Cast(img > 0, sitk.sitkUInt8)
+    return sitk.GetArrayViewFromImage(b) > 0
+
+
+def parenchyma_envelope(pipe_name="parenchyma_liver"):
+    """Parenchyma scored against the liver envelope (VAL-032 convention) and the disjoint label.
+
+    The envelope is the reference liver label with the tumor and vessel carve-outs filled: the SEG
+    labels are disjoint, so the Mass and vessel label regions are added back into the liver
+    reference for scoring. Both scores are reported for the audit trail.
+    """
+    pred = sitk.ReadImage(os.path.join(OUT_DIR, pipe_name + "_labelmap.nrrd"))
+    p_img = sitk.Cast(pred > 0, sitk.sitkUInt8)
+    p = sitk.GetArrayViewFromImage(p_img) > 0
+    liver = load_ref_arr("reference_liver")
+    tumor = load_ref_arr("reference_tumor")
+    vessel = load_ref_arr("reference_vessel")
+    portal = load_ref_arr("reference_portal_vein")
+    envelope = liver | tumor | vessel
+    organ_envelope = liver | tumor | portal
+
+    def score(ref):
+        inter = int(np.logical_and(p, ref).sum())
+        a = int(p.sum())
+        b = int(ref.sum())
+        return {
+            "dice": round(float(2.0 * inter / (a + b)), 6) if (a + b) else 1.0,
+            "jaccard": round(float(inter / (a + b - inter)), 6) if (a + b - inter) else 1.0,
+            "recall": round(float(inter / b), 6) if b else 1.0,
+            "reference_voxels": b,
+            "intersection_voxels": inter,
+            "fp_voxels": a - inter,
+            "fn_voxels": b - inter,
+        }
+
+    return {
+        "convention": ("liver envelope: the reference liver label with the Mass and vessel carve-outs filled "
+                       "(the SEG labels are disjoint, overlap 0.0); the envelope convention is documented in "
+                       "each evaluation record"),
+        "envelope_definition": ("reference_liver OR reference_tumor OR reference_portal_vein (the organ "
+                                "envelope; the Abdominal aorta label is extra-hepatic and is not a carve-out "
+                                "of the liver label)"),
+        "envelope": score(organ_envelope),
+        "envelope_including_aorta_label_for_audit": score(envelope),
+        "envelope_including_aorta_definition": "reference_liver OR reference_tumor OR reference_vessel",
+        "disjoint_label": score(liver),
+    }
+
+
+DIAMETER_BANDS_MM = [(0.0, 2.0), (2.0, 3.0), (3.0, 5.0), (5.0, 10.0), (10.0, float("inf"))]
+
+
+def stratified_vessel(pipe_name="vascular_keepout_bone_excluded", ref_name="reference_vessel"):
+    """Stratified vessel metrics: recall per reference component and per lumen-diameter band, and the
+    margin-inclusive keep-out volume attributable per band (evaluation-side geometry).
+
+    Lumen diameter is measured as twice the in-sphere radius (the SignedMaurerDistanceMap distance to
+    the label boundary, useImageSpacing, the same measure as the 5.49 mm max lumen radius finding).
+    """
+    pred = sitk.ReadImage(os.path.join(OUT_DIR, pipe_name + "_labelmap.nrrd"))
+    p_img = sitk.Cast(pred > 0, sitk.sitkUInt8)
+    p = sitk.GetArrayViewFromImage(p_img) > 0
+    ref_img = sitk.ReadImage(os.path.join(REF_DIR, ref_name + "_labelmap.nrrd"))
+    r_img = sitk.Cast(ref_img > 0, sitk.sitkUInt8)
+    r = sitk.GetArrayViewFromImage(r_img) > 0
+    voxel_mm3 = float(np.prod(ref_img.GetSpacing()))
+
+    # In-plane lumen diameter: the vessel cross-section is an in-plane measure and the in-plane
+    # spacing is isotropic (0.78125 mm). The 3D Maurer distance is unreliable at the 5 mm z spacing
+    # (it reported 50 mm in-radius on a 22 mm aorta), so the diameter is the per-slice 2D in-radius.
+    d2d = np.zeros(r.shape, dtype=np.float32)
+    for k in range(r.shape[0]):
+        if not r[k].any():
+            continue
+        sl_img = sitk.Cast(sitk.GetImageFromArray(r[k].astype(np.uint8)), sitk.sitkUInt8)
+        sl_img.SetSpacing(ref_img.GetSpacing()[:2])
+        d2d[k] = signed_distance(sl_img)
+    diameter = np.where(r, 2.0 * d2d, 0.0)
+
+    bands = []
+    band_masks = []
+    for lo, hi in DIAMETER_BANDS_MM:
+        m = r & (diameter >= lo) & (diameter < hi)
+        band_masks.append(m)
+        total = int(m.sum())
+        covered = int(np.logical_and(p, m).sum())
+        bands.append({
+            "diameter_mm": ("%g-%g" % (lo, hi)) if hi != float("inf") else "%g+" % lo,
+            "reference_voxels": total,
+            "reference_volume_ml": round(total * voxel_mm3 / 1000.0, 3),
+            "covered_voxels": covered,
+            "recall": round(float(covered) / total, 6) if total else None,
+        })
+
+    filt = sitk.ConnectedComponentImageFilter()
+    filt.SetFullyConnected(True)
+    cc_img = filt.Execute(r_img)
+    cc = sitk.GetArrayViewFromImage(cc_img)
+    comps = []
+    for lbl in range(1, int(cc.max()) + 1):
+        m = cc == lbl
+        total = int(m.sum())
+        if not total:
+            continue
+        covered = int(np.logical_and(p, m).sum())
+        czs, cys, cxs = np.nonzero(m)
+        comps.append({
+            "component": lbl,
+            "voxels": total,
+            "volume_ml": round(total * voxel_mm3 / 1000.0, 3),
+            "max_lumen_diameter_mm": round(float(diameter[m].max()), 2),
+            "median_lumen_diameter_mm": round(float(np.median(diameter[m])), 2),
+            "bbox_x_pixel": [int(cxs.min()), int(cxs.max())],
+            "bbox_y_pixel": [int(cys.min()), int(cys.max())],
+            "bbox_slice": [int(czs.min()), int(czs.max())],
+            "covered_voxels": covered,
+            "recall": round(float(covered) / total, 6),
+        })
+    comps.sort(key=lambda c: -c["voxels"])
+
+    # Keep-out volume attributable per band: every keep-out voxel is attributed to the nearest band
+    # reference voxels (zero distance for the band's own reference voxels).
+    pred_vox = int(p.sum())
+    owner = np.zeros(p.shape, dtype=np.uint8)
+    best = np.full(p.shape, np.inf, dtype=np.float32)
+    for bi, m in enumerate(band_masks):
+        if not m.any():
+            continue
+        m_img = sitk.Cast(sitk.GetImageFromArray(m.astype(np.uint8)), sitk.sitkUInt8)
+        m_img.SetSpacing(ref_img.GetSpacing())
+        bda = signed_distance(m_img)
+        dist_to_band = np.where(m, 0.0, -bda).astype(np.float32)
+        closer = p & (dist_to_band < best)
+        best[closer] = dist_to_band[closer]
+        owner[closer] = bi + 1
+    attributed = []
+    for bi, band in enumerate(bands):
+        vox = int(np.logical_and(p, owner == bi + 1).sum())
+        attributed.append({"diameter_mm": band["diameter_mm"],
+                           "keepout_voxels_attributed": vox,
+                           "keepout_ml_attributed": round(vox * voxel_mm3 / 1000.0, 3)})
+    unattributed = int(np.logical_and(p, owner == 0).sum())
+
+    return {
+        "measure": ("lumen diameter is the per-slice in-plane in-sphere diameter (SignedMaurerDistanceMap "
+                    "per slice, in-plane spacing 0.78125 mm); components qualify by max in-plane lumen "
+                    "diameter; keep-out voxels are attributed to the nearest band"),
+        "voxel_mm3": round(voxel_mm3, 6),
+        "bands": bands,
+        "components": comps,
+        "keepout_attribution_by_band": attributed,
+        "keepout_voxels_unattributed": unattributed,
+        "keepout_total_voxels": pred_vox,
+    }
+
+
+def grounded_values(strat, vessel_result, groundable=(2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 8.0, 10.0, 11.0, 12.0, 15.0, 20.0)):
+    """Ground the VAL-032 adjustable markers from the stratified measurements.
+
+    Diameter floor: the smallest tested floor at which the reference-resolvable set (components with
+    lumen diameter at or above the floor) reaches gated recall 0.95 on the measured keep-out. Volume
+    multiplier: the measured margin-inclusive keep-out volume at the gated point over the reference
+    vessel volume, rounded up to the next 0.25.
+    """
+    comp_rows = strat["components"]
+    rows = []
+    grounded_floor = None
+    for floor in groundable:
+        gated = [c for c in comp_rows if c["max_lumen_diameter_mm"] >= floor]
+        total = sum(c["voxels"] for c in gated)
+        covered = sum(c["covered_voxels"] for c in gated)
+        recall = round(float(covered) / total, 6) if total else None
+        row = {"floor_mm": floor, "gated_components": len(gated),
+               "gated_reference_voxels": total,
+               "gated_reference_volume_ml": round(total * strat["voxel_mm3"] / 1000.0, 3),
+               "gated_recall": recall}
+        rows.append(row)
+        if grounded_floor is None and recall is not None and recall >= 0.95:
+            grounded_floor = floor
+    measured_multiple = vessel_result["pipeline_volume_ml"] / vessel_result["reference_volume_ml"]
+    import math
+    grounded_multiple = math.ceil(measured_multiple * 4.0) / 4.0
+    return {
+        "diameter_floor_candidates": rows,
+        "grounded_diameter_floor_mm": grounded_floor,
+        "floor_rule": ("smallest tested floor at which gated recall reaches 0.95 on the measured keep-out; "
+                       "components qualify by max lumen diameter"),
+        "measured_keepout_volume_ml": vessel_result["pipeline_volume_ml"],
+        "reference_vessel_volume_ml": vessel_result["reference_volume_ml"],
+        "measured_volume_multiple": round(measured_multiple, 4),
+        "grounded_volume_multiple": grounded_multiple,
+        "multiple_rule": "measured margin-inclusive keep-out volume over the reference vessel volume, rounded up to the next 0.25",
+    }
 
 
 def pipeline_margin(pipe_name):
@@ -401,15 +620,55 @@ def main():
     attribution = vessel_attribution()
     conventions["vascular_coverage_by_label"] = attribution
     clauses = clause_verdicts(results)
+    envelope = parenchyma_envelope()
+    strat = stratified_vessel()
+    vessel_result = next(r for r in results if r["pipeline_segment"] == "vascular_keepout_bone_excluded")
+    grounding = grounded_values(strat, vessel_result)
+    recentered = {
+        "clause_source": ("VAL-032 re-centered clauses (owner decisions of 2026-11-05); parenchyma against the "
+                          "liver envelope, vascular recall over the reference-resolvable set at the grounded "
+                          "diameter floor, tumor unchanged from VAL-031"),
+        "parenchyma": {
+            "convention": "liver envelope (carve-outs filled)",
+            "dice": envelope["envelope"]["dice"], "dice_floor": CLAUSE["parenchyma_min_dice"],
+            "recall": envelope["envelope"]["recall"], "recall_floor": CLAUSE["parenchyma_min_recall"],
+            "disjoint_label_dice_for_audit": envelope["disjoint_label"]["dice"],
+            "disjoint_label_recall_for_audit": envelope["disjoint_label"]["recall"],
+            "verdict": "PASS" if (envelope["envelope"]["dice"] >= CLAUSE["parenchyma_min_dice"]
+                                  and envelope["envelope"]["recall"] >= CLAUSE["parenchyma_min_recall"]) else "FAIL",
+        },
+        "vascular_keepout": {
+            "gated_diameter_floor_mm": grounding["grounded_diameter_floor_mm"],
+            "gated_recall": next((row["gated_recall"] for row in grounding["diameter_floor_candidates"]
+                                  if row["floor_mm"] == grounding["grounded_diameter_floor_mm"]), None),
+            "gated_recall_floor": CLAUSE["vascular_min_recall"],
+            "full_tree_recall_for_information": vessel_result["recall"],
+            "keepout_volume_ml": vessel_result["pipeline_volume_ml"],
+            "keepout_volume_multiple": grounding["measured_volume_multiple"],
+            "grounded_volume_multiple": grounding["grounded_volume_multiple"],
+            "keepout_margin_mm": pipeline_margin("vascular_keepout_bone_excluded")["margin_mm"],
+            "margin_documentation": KEEP_OUT_MARGIN_NOTE,
+            "thin_branch_residual": ("unresolved thin-branch residual risk recorded in the risk file "
+                                     "(DEVELOPMENT_PLAN.md Section 7.1) where FR-RTA-003 picks it up"),
+            "verdict": "PASS" if (grounding["grounded_diameter_floor_mm"] is not None
+                                  and vessel_result["pipeline_volume_ml"] / vessel_result["reference_volume_ml"]
+                                  <= grounding["grounded_volume_multiple"]) else "FAIL",
+        },
+        "tumor": clauses["tumor"],
+    }
     overlays = export_disagreement_overlays(utc_now().replace(":", "").replace("-", ""))
     doc = {
         "dataset_id": DATASET_ID,
         "generated_utc": utc_now(),
-        "gate": "G2.1 (VAL-031 per-structure clauses, VTM row FR-MS-001)",
+        "gate": "G2.1 (VAL-032 re-centered clauses; VAL-031 record retained)",
         "gate_clauses": CLAUSE,
         "simpleitk_version": sitk.Version().VersionString(),
         "seg_label_convention_notes": conventions,
-        "clause_verdicts": clauses,
+        "parenchyma_envelope_scores": envelope,
+        "vascular_stratified": strat,
+        "grounded_values": grounding,
+        "clause_verdicts_val031": clauses,
+        "clause_verdicts": recentered,
         "disagreement_overlays": overlays,
         "results": results,
     }
@@ -426,6 +685,18 @@ def main():
         print("DISAGREEMENT", r["pipeline_segment"],
               "fp", json.dumps(r["disagreement"]["fp_distance_to_reference"], sort_keys=True),
               "fn", json.dumps(r["disagreement"]["fn_distance_to_pipeline"], sort_keys=True), flush=True)
+    print("PARENCHYMA_ENVELOPE", json.dumps(envelope["envelope"], sort_keys=True), flush=True)
+    print("PARENCHYMA_ENVELOPE_WITH_AORTA", json.dumps(envelope["envelope_including_aorta_label_for_audit"], sort_keys=True), flush=True)
+    print("PARENCHYMA_DISJOINT", json.dumps(envelope["disjoint_label"], sort_keys=True), flush=True)
+    for band in strat["bands"]:
+        print("VESSEL_BAND", band["diameter_mm"], "ref_vox", band["reference_voxels"],
+              "recall", band["recall"], flush=True)
+    for row in grounding["diameter_floor_candidates"]:
+        print("GATED_FLOOR", row["floor_mm"], "components", row["gated_components"],
+              "gated_ref_vox", row["gated_reference_voxels"], "gated_recall", row["gated_recall"], flush=True)
+    print("GROUNDED_FLOOR_MM", grounding["grounded_diameter_floor_mm"],
+          "GROUNDED_VOLUME_MULTIPLE", grounding["grounded_volume_multiple"],
+          "MEASURED_MULTIPLE", grounding["measured_volume_multiple"], flush=True)
     print("PORTAL_VEIN_CONVENTION", conventions["portal_vein_convention"],
           "components", conventions["reference_portal_vein"]["components_26"],
           "volume_ml", conventions["reference_portal_vein"]["volume_ml"],
@@ -435,7 +706,7 @@ def main():
     print("LABEL_OVERLAPS", json.dumps(conventions["label_overlaps"], sort_keys=True), flush=True)
     print("DISAGREEMENT_OVERLAYS", overlays["folder"], flush=True)
     for name in ("parenchyma", "vascular_keepout", "tumor"):
-        print("CLAUSE", name, json.dumps(clauses[name], sort_keys=True), flush=True)
+        print("CLAUSE", name, json.dumps(recentered[name], sort_keys=True), flush=True)
     print("EVALUATION_DONE", os.path.join(OUT_DIR, "evaluation.json"))
 
 

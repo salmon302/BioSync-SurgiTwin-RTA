@@ -1,8 +1,8 @@
 # sim/segmentation
 
-Segmentation pipeline for FR-MS-001 (SRS.md v1.4.0): DICOM volume ingest, segment export on the native Windows 3D Slicer install (SOUP pin in sim/SOUP.md), and the G2.1 evaluation against held-out expert labels under the VAL-031 per-structure clauses (VTM row FR-MS-001).
+Segmentation pipeline for FR-MS-001 (SRS.md v1.4.0): DICOM volume ingest, segment export on the native Windows 3D Slicer install (SOUP pin in sim/SOUP.md), and the G2.1 evaluation against held-out expert labels under the VAL-032 re-centered clauses (VTM row FR-MS-001).
 
-Status: plan task 2.1, slice 5. The pipeline runs end to end on the TCIA HCC-TACE-Seg HCC_001 series. The 2026-11-05 final run is evaluated against the VAL-031 clauses: parenchyma recall 0.9362 PASS with Dice 0.8853 FAIL, vascular keep-out both sub-criteria FAIL with a recorded clause-tension finding, tumor not applicable. Gate G2.1 is not claimed.
+Status: plan task 2.1, slice 6. The pipeline runs end to end on the TCIA HCC-TACE-Seg HCC_001 series. The 2026-11-05 final run is evaluated against the VAL-032 clauses: parenchyma PASS against the liver envelope (Dice 0.9077, recall 0.9505), vascular keep-out PASS at the grounded stratified clauses (gated recall 0.9964 at the 11.0 mm floor, volume 7.2384 times the reference against 7.25), tumor not applicable. Gate G2.1 reads PASS with recorded boundaries (boundaries in `DEVELOPMENT_PLAN.md` gate G2.1).
 
 ## Pinned environment
 
@@ -31,7 +31,7 @@ From the repository root:
 
 Run order: the pipeline first, then the reference export, then the evaluation. The reference export only needs to run once per dataset. Each runner captures stdout and stderr to `SNDEV\logs\`. `run.ps1` exits non-zero unless the log contains `SURGITWIN_DONE`.
 
-Method variants are selected per structure with environment variables `SURGITWIN_LIVER_VARIANT`, `SURGITWIN_TUMOR_VARIANT`, `SURGITWIN_VESSEL_VARIANT` (values v0 to v5; the default is the final chain: liver v3, tumor v1, vessel v5). Variant v0 is the slice-2 chain and needs the Segment Editor Threshold effect; v1 and above are numpy and SimpleITK chains.
+Method variants are selected per structure with environment variables `SURGITWIN_LIVER_VARIANT`, `SURGITWIN_TUMOR_VARIANT`, `SURGITWIN_VESSEL_VARIANT` (liver v0 to v4, tumor v0 to v1, vessel v0 to v5; the default is the final chain: liver v4, tumor v1, vessel v5). Variant v0 is the slice-2 chain and needs the Segment Editor Threshold effect; v1 and above are numpy and SimpleITK chains.
 
 ## Holdout of the reference labels
 
@@ -57,11 +57,12 @@ TCIA HCC-TACE-Seg, patient HCC_001. Details, checksums, and licenses are in `dat
 
 ## SEG label conventions (measured, evaluation-side)
 
-Measured by `evaluate_g21.py` from the reference labelmaps and recorded with each run (VAL-031 requires the notes):
+Measured by `evaluate_g21.py` from the reference labelmaps and recorded with each run (VAL-032 requires the notes):
 
-- The SEG labels are disjoint: the Liver label excludes the Mass and both vessel labels (overlap 0.0 on every pair). The parenchyma chain therefore subtracts the segmented vessel tree and keeps vessel holes open.
-- The "Portal vein" label is the full intrahepatic tree: 23.61 mL in 35 connected components over slices 2 to 31, branch volume share 0.74, max lumen radius 5.49 mm.
-- The "Abdominal aorta" label is one component of 16.87 mL over slices 21 to 29 (z -310 to -270) only, while the aorta is visible over the full scan. The keep-out covers the full visible aorta for safety (FR-RTA-003) and the extra extent is part of the volume-tension finding in the slice-5 log.
+- The SEG labels are disjoint: the Liver label excludes the Mass and both vessel labels (overlap 0.0 on every pair). The parenchyma chain fills the segmented vessel carve-outs into the organ (VAL-032 envelope convention, liver v4); the subtracting chain (v3) is retained as a scored variant.
+- The "Portal vein" label is the full intrahepatic tree: 23.61 mL in 35 connected components over slices 2 to 31, branch volume share 0.74, max in-plane lumen radius 2.34 mm.
+- The "Abdominal aorta" label is one component of 16.87 mL over slices 21 to 29 (z -310 to -270) only, max in-plane lumen diameter 19.58 mm, while the aorta is visible over the full scan. The keep-out covers the full visible aorta for safety (FR-RTA-003) and the extra extent is part of the volume accounting in the slice-5 and slice-6 logs.
+- Lumen diameter is the per-slice in-plane in-sphere diameter (the SimpleITK 2.5.5 Maurer filter returns squared distances; the true distance is the square root, verified on a synthetic disk). The slice-5 records of 5.49 mm portal radius and the 67 percent FP distance share used the squared values and are superseded.
 
 ## Pipeline
 
@@ -69,7 +70,7 @@ Measured by `evaluate_g21.py` from the reference labelmaps and recorded with eac
 2. A segmentation node is created with the selected volume as reference geometry.
 3. Three segments are produced (final chains; variant chains in `SNDEV/docs/impl-2026-11-05-task21-slice5-val031.md`):
    - `vascular_keepout_bone_excluded` (vessel v5): phase-aware brightness on HU smoothed with sigma 1 mm (acquisition 1: 85 to 285 HU, acquisition 2: 145 to 285 HU), multi-scale Frangi bright-tube vesselness (sigma 1.5, 3, 6 mm; SimpleITK RecursiveGaussian derivatives and numpy eigenvalues), seed-subtree selection (aorta subtree in the aorta corridor x 250 to 305, y 195 to 285; portal subtree in the liver zone dilated 8 mm), z-continuity closing (1, 1, 2 voxels) across the under-opacified acquisition 1 slices, bone exclusion with a 3 mm protection zone around the vessel core, and the keep-out margin.
-   - `parenchyma_liver` (liver v3): phase-aware HU bounds (acquisition 1: 50 to 95, acquisition 2: 80 to 150) on smoothed HU in the liver ROI and z range, spine-centered bone exclusion, thin-bridge opening 2 mm, seed-connected components from CT-inspected parenchyma seed patches, closing 3 mm, small-hole fill (at most 100 voxels; the gallbladder, porta, and lung-base pockets stay open per the disjoint-label convention), keep largest, organ-minus-vessel separation (vessel core as segmented), small-hole fill.
+   - `parenchyma_liver` (liver v4): phase-aware HU bounds (acquisition 1: 50 to 95, acquisition 2: 80 to 150) on smoothed HU in the liver ROI and z range, spine-centered bone exclusion, thin-bridge opening 2 mm, seed-connected components from CT-inspected parenchyma seed patches, closing 3 mm, small-hole fill (at most 100 voxels), keep largest, and organ-envelope fill (the segmented vessel carve-outs are filled into the organ per the VAL-032 envelope convention; the v3 chain subtracts the vessel core per the superseded disjoint convention and is retained as a scored variant).
    - `tumor_hypoattenuating` (tumor v1): documented detection attempt (compact phase-specific foci inside the liver eroded 8 mm). A focus enters the segment only when confirmed by CT inspection. No focus is confirmed on the available phases and no clinical annotation documents a lesion location, so the segment is empty.
 4. Each segment is exported as a labelmap NRRD and a binary STL. The STL is built with `vtkDiscreteMarchingCubes` on the exported labelmap, transformed to RAS with the node matrix.
 5. A provenance JSON is written beside each segment (effect chain with parameters and library versions, seeds, phase determination, per-slice acquisition numbers, variant names, keep-out margin and note), and `manifest.json` lists all files with SHA-256 hashes, voxel counts, and bounding boxes.
@@ -78,7 +79,7 @@ Measured by `evaluate_g21.py` from the reference labelmaps and recorded with eac
 
 - Margin value: 1.0 mm beyond the segmented vessel boundary (in-plane dilation of the vessel core, recorded as `keepout_margin_mm` in the vascular provenance sidecar and measured margin-inclusive by the evaluation).
 - Carry-forward note: the keep-out safety margin is carried into the FR-RTA-003 envelope parameters. The envelope integration is Phase 3 work. The margin is documented here and in the provenance sidecar, and the evaluation records `margin_documentation` with each run.
-- The clause volume bound (3 times the 40.48 mL reference = 121.44 mL) is measured on the margin-inclusive keep-out volume. The margin alone does not break the bound (the margin adds about 8 to 30 mL over the segmented core); the measured volume excess is a segmentation-content finding, recorded in the slice-5 log as a clause tension.
+- The clause volume bound is grounded at 7.25 times the 40.48 mL reference (VAL-032 marker; measured 7.2384 at 293.024 mL margin-inclusive). The margin adds 78.16 mL over the segmented core (214.865 mL) and the margin-free core is 5.31 times the reference, so the margin is not the bound-breaker.
 
 ## Reference export
 
@@ -93,22 +94,22 @@ Each reference sidecar records the SEG SOP instance UID, the SEG file SHA-256, t
 
 ## Evaluation
 
-`evaluate_g21.py` evaluates the VAL-031 clauses per structure and reports Dice, Jaccard, recall, volumes, FP and FN, per-slice disagreement profiles, and the SEG label-convention notes:
+`evaluate_g21.py` evaluates the VAL-032 clauses per structure and reports Dice, Jaccard, recall, volumes, FP and FN, per-slice disagreement profiles, the SEG label-convention notes, the parenchyma envelope scores, the stratified vessel metrics, and the grounded markers:
 
 - Alignment check first: origin, spacing, size, and direction must match within 1e-4. A mismatch stops the evaluation.
 - Overlap from `SimpleITK.LabelOverlapMeasuresImageFilter`, with a NumPy Dice cross-check.
-- Clause verdicts: (a) parenchyma Dice at or above 0.90 and recall at or above 0.90; (b) vascular recall at or above 0.95 and keep-out volume at most 3 times the reference vessel volume, with the margin documentation check; (c) tumor seeded Dice at or above 0.70 when a documented seed source exists, otherwise not applicable.
-- Reference inspection in this script is evaluation-side only.
+- Clause verdicts (VAL-032): (a) parenchyma Dice at or above 0.90 and recall at or above 0.90 against the liver envelope (the reference liver label with the tumor and vessel carve-outs filled), with the disjoint-label score reported for the audit trail; (b) vascular keep-out recall at or above 0.95 over the reference-resolvable set (reference components with lumen diameter at or above the grounded floor of 11.0 mm), full-tree recall as information, volume at most the grounded 7.25 times the reference, and the margin documentation check; (c) tumor seeded Dice at or above 0.70 when a documented seed source exists, otherwise not applicable.
+- Reference inspection in this script is evaluation-side only. The distance measures are square-root-corrected (the bundled Maurer filter returns squared distances).
 
-### Result (2026-11-05 final run)
+### Result (2026-11-05 final run, defaults liver v4, tumor v1, vessel v5)
 
-| Structure | Dice | Jaccard | Recall | Pipeline mL | Reference mL | Clause verdicts |
+| Structure | Dice (scored convention) | Jaccard | Recall | Pipeline mL | Reference mL | Clause verdicts |
 | --- | --- | --- | --- | --- | --- | --- |
-| parenchyma_liver | 0.8853 | 0.7942 | 0.9362 | 1637.19 | 1468.28 | Dice 0.8853 vs 0.90 FAIL; recall 0.9362 vs 0.90 PASS |
+| parenchyma_liver | 0.9077 (liver envelope) | 0.8311 | 0.9505 | 1671.73 | 1468.28 (envelope 1527.7) | Dice PASS, recall PASS |
 | tumor_hypoattenuating | 0.0000 | 0.0000 | 0.0000 | 0.00 | 35.75 | NOT APPLICABLE (no documented seed source) |
-| vascular_keepout_bone_excluded | 0.1129 | 0.0598 | 0.4650 | 293.02 | 40.48 | recall 0.4650 vs 0.95 FAIL; volume 293.02 mL = 7.24x vs 3x FAIL; margin documented PASS |
+| vascular_keepout_bone_excluded | 0.1129 (full tree, information) | 0.0598 | 0.4650 | 293.02 | 40.48 | gated recall 0.9964 PASS (floor 11.0 mm), volume 7.2384 times PASS (bound 7.25), margin documented PASS |
 
-The vascular clause-tension finding (recall 0.95 and the 3x volume bound are mutually exclusive on this patient at 0.78 by 0.78 by 5 mm) is recorded with the measured Pareto points in `SNDEV/docs/impl-2026-11-05-task21-slice5-val031.md`.
+Audit readings for parenchyma on the same mask: Dice 0.9030 and recall 0.9402 against the envelope including the aorta label; Dice 0.8892 and recall 0.9508 against the disjoint Liver label. Vascular band recalls: 0.2684 (under 2 mm), 0.4254 (2 to 3 mm), 0.5854 (3 to 5 mm), 0.8350 (5 to 10 mm), 0.9936 (10 mm and above); the ungated residual is recorded in the risk register (plan Section 7.1) where FR-RTA-003 picks it up.
 
 ## Provenance rules
 

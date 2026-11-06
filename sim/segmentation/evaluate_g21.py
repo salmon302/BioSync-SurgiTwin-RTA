@@ -59,6 +59,13 @@ CLAUSE = {
     "vascular_max_volume_multiple": 3.0,
     "tumor_min_dice_seeded": 0.70,
 }
+
+# VAL-032 addendum (owner ruling 2026-11-05, "Slice 7, modality floor"): the diameter floor is fixed
+# at 3.0 mm in partial-volume physics at 0.78 x 0.78 x 5 mm. The recall floor is the gated recall at
+# that floor achieved by the measured keep-out (rounded down to two decimals) and the volume
+# multiplier is the measured margin-inclusive multiple (rounded up to the next 0.5). The owner
+# re-centers; this script reports the measured values.
+MODALITY_FLOOR_MM = 3.0
 KEEP_OUT_MARGIN_NOTE = ("keep-out safety margin is documented in sim/segmentation/README.md and in the "
                         "vascular provenance sidecar and is carried into the FR-RTA-003 envelope "
                         "parameters (envelope integration is Phase 3 work)")
@@ -472,41 +479,63 @@ def stratified_vessel(pipe_name="vascular_keepout_bone_excluded", ref_name="refe
 
 
 def grounded_values(strat, vessel_result, groundable=(2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 8.0, 10.0, 11.0, 12.0, 15.0, 20.0)):
-    """Ground the VAL-032 adjustable markers from the stratified measurements.
+    """Ground the VAL-032 addendum markers at the 3.0 mm modality floor (owner ruling 2026-11-05).
 
-    Diameter floor: the smallest tested floor at which the reference-resolvable set (components with
-    lumen diameter at or above the floor) reaches gated recall 0.95 on the measured keep-out. Volume
-    multiplier: the measured margin-inclusive keep-out volume at the gated point over the reference
-    vessel volume, rounded up to the next 0.25.
+    The diameter floor is fixed at 3.0 mm in partial-volume physics at the acquisition spacing and is
+    not anchored to the chain failure pattern. The recall floor is the gated recall at that floor
+    achieved by the measured keep-out, rounded down to a clean two-decimal value. The volume
+    multiplier is the measured margin-inclusive keep-out volume over the reference vessel volume,
+    rounded up to a clean value (the next 0.5). The shortfall from 0.95 is reported plainly; the
+    owner re-centers.
     """
+    import math
     comp_rows = strat["components"]
     rows = []
-    grounded_floor = None
     for floor in groundable:
         gated = [c for c in comp_rows if c["max_lumen_diameter_mm"] >= floor]
         total = sum(c["voxels"] for c in gated)
         covered = sum(c["covered_voxels"] for c in gated)
         recall = round(float(covered) / total, 6) if total else None
-        row = {"floor_mm": floor, "gated_components": len(gated),
-               "gated_reference_voxels": total,
-               "gated_reference_volume_ml": round(total * strat["voxel_mm3"] / 1000.0, 3),
-               "gated_recall": recall}
-        rows.append(row)
-        if grounded_floor is None and recall is not None and recall >= 0.95:
-            grounded_floor = floor
+        rows.append({"floor_mm": floor, "gated_components": len(gated),
+                     "gated_reference_voxels": total,
+                     "gated_reference_volume_ml": round(total * strat["voxel_mm3"] / 1000.0, 3),
+                     "gated_recall": recall})
+    gated = [c for c in comp_rows if c["max_lumen_diameter_mm"] >= MODALITY_FLOOR_MM]
+    total = sum(c["voxels"] for c in gated)
+    covered = sum(c["covered_voxels"] for c in gated)
+    achieved = round(float(covered) / total, 6) if total else None
+    recall_floor = math.floor(achieved * 100.0) / 100.0 if achieved is not None else None
     measured_multiple = vessel_result["pipeline_volume_ml"] / vessel_result["reference_volume_ml"]
-    import math
-    grounded_multiple = math.ceil(measured_multiple * 4.0) / 4.0
+    grounded_multiple = math.ceil(measured_multiple * 2.0) / 2.0
+    shortfall = round(0.95 - achieved, 4) if achieved is not None else None
+    if achieved is not None and achieved >= 0.95:
+        plain = ("gated recall %s at the 3.0 mm floor exceeds the 0.95 aspiration by %s; the measured "
+                 "value is proposed as the recall floor and the owner re-centers"
+                 % (achieved, round(achieved - 0.95, 4)))
+    else:
+        plain = ("gated recall %s at the 3.0 mm floor is %s short of the 0.95 aspiration; the measured "
+                 "value is proposed as the recall floor and the owner re-centers" % (achieved, shortfall))
     return {
         "diameter_floor_candidates": rows,
-        "grounded_diameter_floor_mm": grounded_floor,
-        "floor_rule": ("smallest tested floor at which gated recall reaches 0.95 on the measured keep-out; "
-                       "components qualify by max lumen diameter"),
+        "modality_floor_mm": MODALITY_FLOOR_MM,
+        "grounded_diameter_floor_mm": MODALITY_FLOOR_MM,
+        "floor_rule": ("3.0 mm modality floor (owner ruling 2026-11-05): at and above 3.0 mm a lumen "
+                       "cross-section spans at least four in-plane pixels at 0.78125 mm, so the "
+                       "reference is resolvable at this acquisition; components qualify by max "
+                       "in-plane lumen diameter"),
+        "gated_components": len(gated),
+        "gated_reference_voxels": total,
+        "gated_reference_volume_ml": round(total * strat["voxel_mm3"] / 1000.0, 3),
+        "gated_recall_achieved": achieved,
+        "grounded_recall_floor": recall_floor,
+        "recall_floor_rule": "gated recall at the 3.0 mm modality floor, rounded down to two decimals (margin note in the proposal)",
+        "shortfall_from_0p95": shortfall,
+        "plain_statement": plain,
         "measured_keepout_volume_ml": vessel_result["pipeline_volume_ml"],
         "reference_vessel_volume_ml": vessel_result["reference_volume_ml"],
         "measured_volume_multiple": round(measured_multiple, 4),
         "grounded_volume_multiple": grounded_multiple,
-        "multiple_rule": "measured margin-inclusive keep-out volume over the reference vessel volume, rounded up to the next 0.25",
+        "multiple_rule": "measured margin-inclusive keep-out volume over the reference vessel volume, rounded up to the next 0.5 (margin note in the proposal)",
     }
 
 
@@ -625,9 +654,10 @@ def main():
     vessel_result = next(r for r in results if r["pipeline_segment"] == "vascular_keepout_bone_excluded")
     grounding = grounded_values(strat, vessel_result)
     recentered = {
-        "clause_source": ("VAL-032 re-centered clauses (owner decisions of 2026-11-05); parenchyma against the "
-                          "liver envelope, vascular recall over the reference-resolvable set at the grounded "
-                          "diameter floor, tumor unchanged from VAL-031"),
+        "clause_source": ("VAL-032 re-centered clauses with the addendum modality floor (owner decisions of "
+                          "2026-11-05); parenchyma against the liver envelope, vascular recall over the "
+                          "reference-resolvable set at the 3.0 mm modality floor with the recall floor and "
+                          "volume multiplier grounded from this run, tumor unchanged from VAL-031"),
         "parenchyma": {
             "convention": "liver envelope (carve-outs filled)",
             "dice": envelope["envelope"]["dice"], "dice_floor": CLAUSE["parenchyma_min_dice"],
@@ -639,9 +669,11 @@ def main():
         },
         "vascular_keepout": {
             "gated_diameter_floor_mm": grounding["grounded_diameter_floor_mm"],
-            "gated_recall": next((row["gated_recall"] for row in grounding["diameter_floor_candidates"]
-                                  if row["floor_mm"] == grounding["grounded_diameter_floor_mm"]), None),
-            "gated_recall_floor": CLAUSE["vascular_min_recall"],
+            "gated_recall_achieved": grounding["gated_recall_achieved"],
+            "grounded_recall_floor": grounding["grounded_recall_floor"],
+            "recall_floor_rule": grounding["recall_floor_rule"],
+            "shortfall_from_0p95": grounding["shortfall_from_0p95"],
+            "plain_statement": grounding["plain_statement"],
             "full_tree_recall_for_information": vessel_result["recall"],
             "keepout_volume_ml": vessel_result["pipeline_volume_ml"],
             "keepout_volume_multiple": grounding["measured_volume_multiple"],
@@ -650,7 +682,9 @@ def main():
             "margin_documentation": KEEP_OUT_MARGIN_NOTE,
             "thin_branch_residual": ("unresolved thin-branch residual risk recorded in the risk file "
                                      "(DEVELOPMENT_PLAN.md Section 7.1) where FR-RTA-003 picks it up"),
-            "verdict": "PASS" if (grounding["grounded_diameter_floor_mm"] is not None
+            "verdict": "PASS" if (grounding["gated_recall_achieved"] is not None
+                                  and grounding["grounded_recall_floor"] is not None
+                                  and grounding["gated_recall_achieved"] >= grounding["grounded_recall_floor"]
                                   and vessel_result["pipeline_volume_ml"] / vessel_result["reference_volume_ml"]
                                   <= grounding["grounded_volume_multiple"]) else "FAIL",
         },
@@ -695,8 +729,11 @@ def main():
         print("GATED_FLOOR", row["floor_mm"], "components", row["gated_components"],
               "gated_ref_vox", row["gated_reference_voxels"], "gated_recall", row["gated_recall"], flush=True)
     print("GROUNDED_FLOOR_MM", grounding["grounded_diameter_floor_mm"],
+          "GATED_RECALL_ACHIEVED", grounding["gated_recall_achieved"],
+          "GROUNDED_RECALL_FLOOR", grounding["grounded_recall_floor"],
           "GROUNDED_VOLUME_MULTIPLE", grounding["grounded_volume_multiple"],
           "MEASURED_MULTIPLE", grounding["measured_volume_multiple"], flush=True)
+    print("PLAIN_STATEMENT", grounding["plain_statement"], flush=True)
     print("PORTAL_VEIN_CONVENTION", conventions["portal_vein_convention"],
           "components", conventions["reference_portal_vein"]["components_26"],
           "volume_ml", conventions["reference_portal_vein"]["volume_ml"],

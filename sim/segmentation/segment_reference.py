@@ -62,6 +62,36 @@ BRIGHT_BOUNDS_V2 = {1: (100.0, 285.0), 2: (150.0, 285.0)}
 BRIGHT_BOUNDS_V3 = {1: (85.0, 285.0), 2: (125.0, 285.0)}
 BRIGHT_BOUNDS_V4 = {1: (78.0, 285.0), 2: (125.0, 285.0)}
 BRIGHT_BOUNDS_V5 = {1: (85.0, 285.0), 2: (145.0, 285.0)}
+# Slice-7 (probe24 diagnosis): on acquisition 1 slices the portal lumen partial-volumes to a median
+# of 71 to 91 HU (p10 49 to 79), inside the parenchyma band, so no brightness or vesselness gate can
+# separate it there; on acquisition 2 slices the same components read 155 to 182 HU with gate pass
+# fractions of 0.99 to 1.0. Variant v6 gates the reliable acquisition 2 slices and fills the
+# acquisition 1 gaps by z-interpolation from the adjacent slice footprints (the 26-connected label
+# geometry drifts at most 1 pixel per slice, so a 3 pixel in-plane tolerance traces it).
+BRIGHT_BOUNDS_V6 = {1: (48.0, 285.0), 2: (140.0, 285.0)}
+Z_INTERP_TOLERANCE_PX = 3
+Z_INTERP_ITERATIONS = 8
+# Variant v7 (slice 7): the v6 iterated fill crept laterally through acquisition-1 parenchyma
+# (1866.57 mL flood, 46.1 times the reference). v7 fills each gap slice from the measured lumen
+# windows inside the INTERSECTION of the two nearest neighbor footprints (3 pixel tolerance per
+# 5 mm step; the 26-connected label drifts at most 1 pixel per slice), with a single-side fallback
+# at run ends. Lumen windows come from the probe24 profile: portal lumen 49 to 121 HU p10 to p90 on
+# acquisition 1, aorta 216 to 271 HU.
+BRIGHT_BOUNDS_V7 = {1: (48.0, 285.0), 2: (140.0, 285.0)}
+AORTA_FILL_WINDOW = (150.0, 285.0)
+PORTAL_FILL_WINDOW = (55.0, 140.0)
+Z_INTERP_TOL_PX = 3
+Z_INTERP_MAX_GAP = 3
+# Variant v8 (slice 7): v7's fill still flooded (1271.17 mL, 31.4 times) because the iterated fill
+# chained through gap runs and the speckle of the acquisition-2 gate fed the footprints. v8 sources
+# the interpolation only from the seed-connected acquisition-2 footprints (the measured-lumen tree)
+# and matches the in-plane tolerance to the z distance (1 pixel per 5 mm slice step, the 26-connected
+# label drift bound, floor 2 pixels), intersecting the two nearest sides so the fill stays on the
+# vessel course.
+BRIGHT_BOUNDS_V8 = {1: (48.0, 285.0), 2: (140.0, 285.0)}
+Z8_TOL_PX_PER_SLICE = 1
+Z8_TOL_PX_MIN = 2
+Z8_MAX_GAP = 3
 VESSEL_SIGMAS_MM = (1.5, 3.0, 6.0)
 VESSEL_SIGMAS_V3_MM = (0.75, 1.5, 3.0, 6.0)
 VESSEL_SIGMAS_V4_MM = (1.2, 2.0, 3.0, 6.0)
@@ -69,7 +99,7 @@ VESSEL_BETA = 0.5
 VESSEL_C = 6.0
 VESSEL_S_FLOOR = 4.0
 VESSEL_S_FLOOR_V4 = 5.0
-VESSEL_T = {"v1": 0.5, "v2": 0.6, "v3": 0.35, "v4": 0.5, "v5": 0.6}
+VESSEL_T = {"v1": 0.5, "v2": 0.6, "v3": 0.35, "v4": 0.5, "v5": 0.6, "v6": 0.6, "v7": 0.6, "v8": 0.6}
 LIVER_OPEN_MM = {"v1": 3.0, "v2": 2.0, "v3": 2.0, "v4": 2.0}
 LIVER_CLOSE_MM = 3.0
 LIVER_ROI = {"x": (30, 350), "y": (50, 350)}
@@ -85,7 +115,7 @@ PORTAL_ZONE_DILATE_MM = 8.0
 # Kidney ROIs (CT inspection, probe14b and probe11 overlays): the renal arteries connect the aorta
 # tree to the kidney vasculature, so the kidneys are excluded from the vessel candidate (v2).
 KIDNEY_BOXES = ({"x": (115, 245), "y": (255, 380)}, {"x": (325, 445), "y": (240, 355)})
-VESSEL_DILATE_MM = {"v1": 2.0, "v2": 1.0, "v3": 1.0, "v4": 1.0, "v5": 1.0}
+VESSEL_DILATE_MM = {"v1": 2.0, "v2": 1.0, "v3": 1.0, "v4": 1.0, "v5": 1.0, "v6": 1.0, "v7": 1.0, "v8": 1.0}
 VESSEL_CORE_ERODE_MM = 1.5
 KEEP_OUT_MARGIN_MM = 1.0
 VESSEL_PROTECT_MM = 3.0
@@ -400,7 +430,7 @@ def chain_vessel_v1(hu, sm, acq_by_slice, spacing, liver, variant):
     sitk_version = sitk.Version().VersionString()
     chains = []
     bounds = {"v1": BRIGHT_BOUNDS_V1, "v2": BRIGHT_BOUNDS_V2, "v3": BRIGHT_BOUNDS_V3, "v4": BRIGHT_BOUNDS_V4,
-              "v5": BRIGHT_BOUNDS_V5}[variant]
+              "v5": BRIGHT_BOUNDS_V5, "v6": BRIGHT_BOUNDS_V6, "v7": BRIGHT_BOUNDS_V7, "v8": BRIGHT_BOUNDS_V8}[variant]
     bright = np.zeros(hu.shape, dtype=np.uint8)
     for k in range(hu.shape[0]):
         lo, hi = bounds[int(acq_by_slice[k])]
@@ -419,7 +449,7 @@ def chain_vessel_v1(hu, sm, acq_by_slice, spacing, liver, variant):
                                   "s_floor_hu": s_floor, "threshold": VESSEL_T[variant],
                                   "aorta_seeds": AORTA_SEEDS, "portal_seeds": PORTAL_SEEDS},
                    "library": "SimpleITK " + sitk_version + " + numpy " + np.__version__})
-    if variant in ("v3", "v4", "v5"):
+    if variant in ("v3", "v4", "v5", "v6", "v7", "v8"):
         aorta_zone = np.zeros(hu.shape, dtype=bool)
         aorta_zone[:, AORTA_CORRIDOR["y"][0]:AORTA_CORRIDOR["y"][1], AORTA_CORRIDOR["x"][0]:AORTA_CORRIDOR["x"][1]] = True
         portal_zone = (sitk_dilate(liver, PORTAL_ZONE_DILATE_MM, spacing) > 0)
@@ -443,17 +473,138 @@ def chain_vessel_v1(hu, sm, acq_by_slice, spacing, liver, variant):
         spine_excl = sitk_dilate(spine, BONE_MARGIN_MM, spacing)
     else:
         spine_excl = np.zeros(hu.shape, dtype=np.uint8)
-    vcand = ((bright > 0) & (vness >= VESSEL_T[variant]) & vregion & (spine_excl == 0)).astype(np.uint8)
-    if variant == "v2":
-        kidney = np.zeros(hu.shape, dtype=np.uint8)
-        for box in KIDNEY_BOXES:
-            kidney[:, box["y"][0]:box["y"][1], box["x"][0]:box["x"][1]] = 1
-        vcand = (vcand * (1 - kidney)).astype(np.uint8)
-    if variant in ("v3", "v4", "v5"):
+    if variant == "v6":
+        # Per-acquisition adaptation with z-interpolation (probe24 diagnosis): the acquisition 2
+        # slices carry the measurable lumen signal (gate pass 0.99 to 1.0 on the missed components)
+        # and the acquisition 1 slices do not (lumen median 71 to 91 HU, inside the parenchyma band).
+        # The acquisition 2 gate is brightness plus vesselness; the acquisition 1 gaps are filled
+        # from the adjacent slice footprints with a 3 pixel in-plane tolerance (the 26-connected
+        # label geometry drifts at most 1 pixel per slice), iterating to cross consecutive gaps.
+        acq1_mask = np.array([int(a) == 1 for a in acq_by_slice], dtype=bool)
+        vcand = ((bright > 0) & (vness >= VESSEL_T[variant]) & vregion & (spine_excl == 0)).astype(np.uint8)
+        vcand[acq1_mask] = 0
+        interp_added = 0
+        for _ in range(Z_INTERP_ITERATIONS):
+            nbr = np.zeros_like(vcand)
+            nbr[:-1] = np.maximum(nbr[:-1], vcand[1:])
+            nbr[1:] = np.maximum(nbr[1:], vcand[:-1])
+            near = sitk.GetArrayFromImage(sitk.BinaryDilate(sitk_img(nbr, spacing),
+                                          [Z_INTERP_TOLERANCE_PX, Z_INTERP_TOLERANCE_PX, 0])) > 0
+            add = acq1_mask[:, None, None] & (bright > 0) & near & (vregion > 0) & (vcand == 0)
+            if not add.any():
+                break
+            interp_added += int(add.sum())
+            vcand = np.maximum(vcand, add.astype(np.uint8))
+        chains.append({"effect": "per-acquisition gate with z-interpolation across the acquisition 1 gaps (acquisition 2 brightness plus vesselness; acquisition 1 filled from adjacent slice footprints)",
+                       "parameters": {"acq1_gap_fill_voxels": interp_added,
+                                      "z_interp_tolerance_px": Z_INTERP_TOLERANCE_PX,
+                                      "z_interp_iterations": Z_INTERP_ITERATIONS},
+                       "library": "SimpleITK " + sitk_version})
+    elif variant == "v7":
+        # Trunk-anchored subtree growth along the measured lumen HU profile with z-interpolation
+        # (probe24): the acquisition 2 gate is brightness plus vesselness; each acquisition 1 gap
+        # slice is filled from the measured lumen window (portal 55 to 140 HU, aorta 150 to 285 HU)
+        # inside the intersection of the two nearest neighbor footprints (3 pixel tolerance per
+        # 5 mm step; the 26-connected label drifts at most 1 pixel per slice), with a single-side
+        # fallback at run ends. The intersection pins the fill to the vessel course, unlike the
+        # iterated fill of v6 which crept laterally through parenchyma.
+        def dilate2d(sl, px):
+            im = sitk.GetImageFromArray(sl.astype(np.uint8))
+            im.SetSpacing(spacing[:2])
+            return sitk.GetArrayFromImage(sitk.BinaryDilate(im, [px, px])) > 0
+
+        acq1_idx = [k for k in range(hu.shape[0]) if int(acq_by_slice[k]) == 1]
+        vcand = ((bright > 0) & (vness >= VESSEL_T[variant]) & vregion & (spine_excl == 0)).astype(np.uint8)
+        vcand[np.array([int(a) == 1 for a in acq_by_slice], dtype=bool)] = 0
+        fill_window = (((((sm >= PORTAL_FILL_WINDOW[0]) & (sm <= PORTAL_FILL_WINDOW[1])) & portal_zone)
+                        | (((sm >= AORTA_FILL_WINDOW[0]) & (sm <= AORTA_FILL_WINDOW[1])) & aorta_zone))
+                       & (spine_excl == 0))
+        interp_added = 0
+        for _ in range(Z_INTERP_ITERATIONS):
+            added_now = 0
+            for k in acq1_idx:
+                ka = next((k - d for d in range(1, Z_INTERP_MAX_GAP + 1)
+                           if k - d >= 0 and vcand[k - d].any()), None)
+                kb = next((k + d for d in range(1, Z_INTERP_MAX_GAP + 1)
+                           if k + d < hu.shape[0] and vcand[k + d].any()), None)
+                if ka is not None and kb is not None:
+                    near = dilate2d(vcand[ka], Z_INTERP_TOL_PX) & dilate2d(vcand[kb], Z_INTERP_TOL_PX)
+                elif ka is not None or kb is not None:
+                    near = dilate2d(vcand[ka if ka is not None else kb], Z_INTERP_TOL_PX)
+                else:
+                    continue
+                add = fill_window[k] & near & (vcand[k] == 0)
+                if add.any():
+                    added_now += int(add.sum())
+                    vcand[k] = np.maximum(vcand[k], add.astype(np.uint8))
+            interp_added += added_now
+            if added_now == 0:
+                break
+        chains.append({"effect": "trunk-anchored subtree growth along the measured lumen HU profile with footprint-intersection z-interpolation",
+                       "parameters": {"acq1_gap_fill_voxels": interp_added,
+                                      "portal_fill_window_hu": list(PORTAL_FILL_WINDOW),
+                                      "aorta_fill_window_hu": list(AORTA_FILL_WINDOW),
+                                      "z_interp_tolerance_px": Z_INTERP_TOL_PX,
+                                      "z_interp_max_gap_slices": Z_INTERP_MAX_GAP},
+                       "library": "SimpleITK " + sitk_version})
+    elif variant == "v8":
+        # v8 (slice 7): footprint-intersection z-interpolation sourced only from the seed-connected
+        # acquisition-2 footprints (the measured-lumen tree), with the in-plane tolerance matched to
+        # the z distance (1 pixel per 5 mm slice step, the 26-connected label drift bound, floor
+        # 2 pixels). No fill voxel chains through a gap run, so the fill stays on the vessel course.
+        def dilate2d(sl, px):
+            im = sitk.GetImageFromArray(sl.astype(np.uint8))
+            im.SetSpacing(spacing[:2])
+            return sitk.GetArrayFromImage(sitk.BinaryDilate(im, [max(1, int(px)), max(1, int(px))])) > 0
+
+        acq1_mask = np.array([int(a) == 1 for a in acq_by_slice], dtype=bool)
+        rel = ((bright > 0) & (vness >= VESSEL_T[variant]) & vregion & (spine_excl == 0)).astype(np.uint8)
+        rel[acq1_mask] = 0
+        rel_tree, rel_kept = keep_seed_components(rel, AORTA_SEEDS + PORTAL_SEEDS, spacing)
+        vcand = rel_tree
+        fill_window = (((((sm >= PORTAL_FILL_WINDOW[0]) & (sm <= PORTAL_FILL_WINDOW[1])) & portal_zone)
+                        | (((sm >= AORTA_FILL_WINDOW[0]) & (sm <= AORTA_FILL_WINDOW[1])) & aorta_zone))
+                       & (spine_excl == 0))
+        interp_added = 0
+        for k in [i for i in range(hu.shape[0]) if acq1_mask[i]]:
+            ka = next((k - d for d in range(1, Z8_MAX_GAP + 1)
+                       if k - d >= 0 and rel_tree[k - d].any()), None)
+            kb = next((k + d for d in range(1, Z8_MAX_GAP + 1)
+                       if k + d < hu.shape[0] and rel_tree[k + d].any()), None)
+            if ka is not None and kb is not None:
+                near = (dilate2d(rel_tree[ka], max(Z8_TOL_PX_MIN, Z8_TOL_PX_PER_SLICE * (k - ka)))
+                        & dilate2d(rel_tree[kb], max(Z8_TOL_PX_MIN, Z8_TOL_PX_PER_SLICE * (kb - k))))
+            elif ka is not None or kb is not None:
+                side, dist = (ka, k - ka) if ka is not None else (kb, kb - k)
+                near = dilate2d(rel_tree[side], max(Z8_TOL_PX_MIN, Z8_TOL_PX_PER_SLICE * dist))
+            else:
+                continue
+            add = fill_window[k] & near & (vcand[k] == 0)
+            if add.any():
+                interp_added += int(add.sum())
+                vcand[k] = np.maximum(vcand[k], add.astype(np.uint8))
+        chains.append({"effect": "trunk-anchored subtree growth along the measured lumen HU profile with drift-matched footprint-intersection z-interpolation (seed-connected acquisition-2 sources only)",
+                       "parameters": {"acq1_gap_fill_voxels": interp_added,
+                                      "reliable_source_voxels": int(rel_tree.sum()),
+                                      "reliable_seed_components": rel_kept,
+                                      "portal_fill_window_hu": list(PORTAL_FILL_WINDOW),
+                                      "aorta_fill_window_hu": list(AORTA_FILL_WINDOW),
+                                      "z_tolerance_px_per_slice": Z8_TOL_PX_PER_SLICE,
+                                      "z_tolerance_px_min": Z8_TOL_PX_MIN,
+                                      "z_interp_max_gap_slices": Z8_MAX_GAP},
+                       "library": "SimpleITK " + sitk_version})
+    else:
+        vcand = ((bright > 0) & (vness >= VESSEL_T[variant]) & vregion & (spine_excl == 0)).astype(np.uint8)
+        if variant == "v2":
+            kidney = np.zeros(hu.shape, dtype=np.uint8)
+            for box in KIDNEY_BOXES:
+                kidney[:, box["y"][0]:box["y"][1], box["x"][0]:box["x"][1]] = 1
+            vcand = (vcand * (1 - kidney)).astype(np.uint8)
+    if variant in ("v3", "v4", "v5", "v6", "v7", "v8"):
         aorta_core, aorta_kept = keep_seed_components((vcand & aorta_zone).astype(np.uint8), AORTA_SEEDS, spacing)
         portal_core, portal_kept = keep_seed_components((vcand & portal_zone).astype(np.uint8), PORTAL_SEEDS, spacing)
         vessel_core = np.maximum(aorta_core, portal_core).astype(np.uint8)
-        if variant in ("v4", "v5"):
+        if variant in ("v4", "v5", "v6", "v7", "v8"):
             # z-continuity closing: bridges the under-opacified acquisition 1 slices along the
             # vessel paths (all portal-tree misses in the slice-5 measurement were on acquisition 1).
             closed = sitk.BinaryMorphologicalClosing(sitk_img(vessel_core, spacing), [1, 1, 2])
@@ -462,11 +613,11 @@ def chain_vessel_v1(hu, sm, acq_by_slice, spacing, liver, variant):
     else:
         vessel_core, kept = keep_seed_components(vcand, AORTA_SEEDS + PORTAL_SEEDS, spacing)
     chains.append({"effect": ("seed-subtree selection: aorta subtree in the aorta corridor, portal subtree in the liver zone"
-                              if variant in ("v3", "v4", "v5") else "seed-connected components"),
-                   "parameters": {"aorta_box": AORTA_BOX, "aorta_corridor": AORTA_CORRIDOR if variant in ("v3", "v4", "v5") else None,
+                              if variant in ("v3", "v4", "v5", "v6", "v7", "v8") else "seed-connected components"),
+                   "parameters": {"aorta_box": AORTA_BOX, "aorta_corridor": AORTA_CORRIDOR if variant in ("v3", "v4", "v5", "v6", "v7", "v8") else None,
                                   "liver_dilate_mm": LIVER_DILATE_FOR_VESSEL_MM,
-                                  "portal_zone_dilate_mm": PORTAL_ZONE_DILATE_MM if variant in ("v3", "v4", "v5") else None,
-                                  "z_continuity_closing_voxels": [1, 1, 2] if variant in ("v4", "v5") else None,
+                                  "portal_zone_dilate_mm": PORTAL_ZONE_DILATE_MM if variant in ("v3", "v4", "v5", "v6", "v7", "v8") else None,
+                                  "z_continuity_closing_voxels": [1, 1, 2] if variant in ("v4", "v5", "v6", "v7", "v8") else None,
                                   "spine_fill_min_voxels": SPINE_FILL_MIN_VOXELS if variant == "v2" else None,
                                   "kidney_boxes": list(KIDNEY_BOXES) if variant == "v2" else None,
                                   "seed_component_patch_voxels": kept},

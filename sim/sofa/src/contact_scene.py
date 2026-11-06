@@ -1,43 +1,51 @@
 # SPDX-License-Identifier: MIT
-"""Task 2.3 slice 1 tool-tissue contact scene (SRS FR-MS-003), SOFA Python scene.
+"""Task 2.3 tool-tissue contact and cutting scene (SRS FR-MS-003), SOFA Python scene.
 
 Loaded by runSofa with `-l SofaPython3` (see sim/sofa/src/run_contact_suite.py).
 
 The organ is the 20 mm budget-fit reference mesh (meshes/reference_organ.msh)
-with the slice-1 parenchyma material, the EulerImplicitSolver + PCG chain (25
-iterations), and the base fixation nodes (the y = 0 plane). The rigid needle is
-a kinematic SOFA MechanicalObject (Rigid3d) with a triangulated surface, driven
-along a scripted trajectory by the controller.
+with the parenchyma material, the EulerImplicitSolver + PCG chain (25
+iterations), and the base fixation nodes (the y = 0 plane in the initial mesh).
+The rigid needle is a kinematic SOFA MechanicalObject (Rigid3d) with a
+triangulated surface, driven along a scripted trajectory by the controller.
+
+The organ is built from a state dict (positions, velocities, rest positions,
+tetrahedra, base flags). A fresh run takes the state from the reference mesh. A
+resumed segment takes it from a checkpoint written by the previous segment at a
+cut (see sim/sofa/src/cut_topology.py and sim/sofa/README.md, cutting model).
 
 Contact is computed in the scene controller (ContactController), not by the SOFA
-collision pipeline. The SOFA pipeline (CCDTightInclusionIntersection,
-RuleBasedContactManager, TriangleCollisionModel) was configured in this build
-and produced no contact response for the needle (see the slice log). The
-controller implements the contact algorithm documented in
-sim/sofa/README.md: corridor-culled candidates, a swept segment-triangle test
-for each tool sample point, a penalty normal force with normal damping, and the
+collision pipeline. The controller implements the contact algorithm documented in
+sim/sofa/README.md: corridor-culled candidates, a swept segment-triangle test for
+each tool sample point, a penalty normal force with normal damping, and the
 reaction distributed to organ nodes through a ConstantForceField with a fixed
 index set.
 
-Outputs written to <out_dir>:
+A cut is requested by the controller when the tool tip is inside the organ with
+penetration and axial puncture force above the thresholds in the config, and the
+tip path crosses at least one tetrahedron. The controller then writes the segment
+outputs and a checkpoint, and exits with code CUT_EXIT_CODE (10). The driver
+applies the cut and starts the next segment.
 
-* bridge_capture.csv: one row per tick in the sim/bridge/README.md replay
+Outputs written to <out_dir>, one set per segment (NN is the segment index):
+
+* bridge_capture_segNN.csv: one row per tick in the sim/bridge/README.md replay
   capture schema (tick, time_s, pos, quat, force, torque, mode_0).
-* diagnostics.csv: per-tick contact, puncture, depth, and inside-organ values.
-* scene_build.json: culling counts and geometry values.
-
-Gravity is a config key (the suite uses 0). The reference base fixation does
-not hold the organ under gravity: with gravity on, the organ sinks through its
-own fixed face (see the slice log), so the contact scene keeps the organ in its
-undeformed shape.
+* diagnostics_segNN.csv: per-tick contact, puncture, depth, inside, and check values.
+* scene_build_segNN.json: culling counts and geometry values.
+* checkpoint.json: written only at a cut (state and controller resume values).
 """
 
 import json
 import math
 import os
+import sys
 
 import numpy as np
 import Sofa
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from cut_topology import load_state, save_state, tet_dets, tets_containing, path_samples  # noqa: E402
 
 PLUGINS = [
     "Sofa.Component.AnimationLoop",
@@ -56,6 +64,9 @@ PLUGINS = [
     "Sofa.Component.Visual",
 ]
 
+CUT_EXIT_CODE = 10
+CUT_SAMPLES = 9
+EXIT_HYSTERESIS_TICKS = 50
 BRIDGE_HEADER = [
     "tick", "time_s", "pos_x", "pos_y", "pos_z",
     "quat_x", "quat_y", "quat_z", "quat_w",
@@ -65,7 +76,7 @@ BRIDGE_HEADER = [
 DIAG_HEADER = [
     "tick", "time_s", "contact_points", "contact_force_n", "puncture_force_n", "depth_m",
     "inside", "tip_x", "tip_y", "tip_z", "mesh_tip_x", "mesh_tip_y", "mesh_tip_z",
-    "organ_top_y", "swept_hits",
+    "organ_top_y", "swept_hits", "full_swept_points", "missed_points", "crossed_tets", "cut_requested",
 ]
 
 
@@ -214,6 +225,20 @@ def segment_triangle_hits(p0, p1, tri_a, tri_b, tri_c):
     return ok & (u >= 0.0) & (v >= 0.0) & (u + v <= 1.0) & (t >= 0.0) & (t <= 1.0)
 
 
+def point_triangle_distance(point, tri_a, tri_b, tri_c, normals):
+    """Distance from one point to each triangle: plane distance when the projection is inside, else the nearest edge."""
+    sd, _, inside = project_barycentric(point[None, :], tri_a, tri_b, tri_c, normals)
+    dist = np.abs(sd[0])
+    edge_dist = np.full(len(tri_a), np.inf)
+    for a, b in ((tri_a, tri_b), (tri_b, tri_c), (tri_c, tri_a)):
+        ab = b - a
+        t = np.clip(np.einsum("tk,tk->t", point[None, :] - a, ab) /
+                    np.maximum(np.einsum("tk,tk->t", ab, ab), 1e-30), 0.0, 1.0)
+        closest = a + t[:, None] * ab
+        edge_dist = np.minimum(edge_dist, np.linalg.norm(point[None, :] - closest, axis=1))
+    return np.where(inside[0], dist, edge_dist)
+
+
 def project_barycentric(points, tri_a, tri_b, tri_c, normals):
     """Signed distance to each triangle plane, projection barycentrics, inside flag (points x tris)."""
     diff = points[:, None, :] - tri_a[None, :, :]
@@ -239,16 +264,17 @@ def project_barycentric(points, tri_a, tri_b, tri_c, normals):
 class ContactController(Sofa.Core.Controller):
     def __init__(self, cfg, state, needle_rigid, needle_mesh, force_field, surface_tris, contact_tris,
                  contact_index_map, puncture_index_map, tool_local, start_tip, end_travel, d,
-                 *args, **kwargs):
+                 tets, resume, segment, orient_sign, initial_volume, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
         self.state = state
         self.needle = needle_rigid
         self.needle_mesh = needle_mesh
         self.cff = force_field
-        self.surface = surface_tris
         self.surface_full = surface_tris
         self.contact_tris = contact_tris
+        self.orient_sign = orient_sign
+        self.initial_volume = initial_volume
         self.cmap = contact_index_map
         self.pmap = puncture_index_map
         self.tool_local = tool_local
@@ -267,17 +293,30 @@ class ContactController(Sofa.Core.Controller):
         self.app_nodes = int(cfg["puncture_nodes"])
         self.total_steps = int(cfg["total_steps"])
         self.out_dir = cfg["out_dir"]
-        self.tick = 0
-        self.last_inside = False
-        self.entry = None
+        self.segment = segment
+        self.cut_enabled = bool(cfg["cut_enabled"])
+        self.cut_min_depth = float(cfg["cut_min_depth_mm"]) * 1e-3
+        self.cut_force = float(cfg["cut_force_n"])
+        self.tets = tets
+        cosf = float(np.dot(self.d, self.fiber))
+        sin2 = 1.0 - cosf * cosf
+        self.k_eff = self.puncture_k * (sin2 + self.anisotropy * cosf * cosf)
+        self.tick = int(resume["tick_next"]) if resume else 0
+        self.last_inside = bool(resume["last_inside"]) if resume else False
+        self.outside_ticks = int(resume["outside_ticks"]) if resume else 0
+        self.entry = np.array(resume["entry"], dtype=float) if resume and resume["entry"] is not None else None
         self.depth = 0.0
         self.last_puncture = 0.0
         self.current_tip = np.array(start_tip, dtype=float)
-        self.prev_pts = None
+        self.prev_tip = np.array(resume["prev_tip"], dtype=float) if resume else np.array(start_tip, dtype=float)
+        self.prev_pts = np.array(resume["prev_pts"], dtype=float) if resume else None
+        self.resume = resume
         self.contact_force = np.zeros(3)
         self.contact_torque = np.zeros(3)
         self.contact_points = 0
         self.swept_hits = 0
+        self.full_swept_points = 0
+        self.missed_points = 0
         self.rows = []
         self.diag = []
         self.q = rotation_quat(np.array([0.0, 0.0, 1.0]), -self.d)
@@ -311,38 +350,53 @@ class ContactController(Sofa.Core.Controller):
         normals = normals / np.maximum(norm, 1e-18)[:, None]
         sd, bary, inside_proj = project_barycentric(pts, tri_a, tri_b, tri_c, normals)
         active = inside_proj & (sd < self.margin)
+        full = pos[self.surface_full]
         self.contact_points = 0
         self.swept_hits = 0
+        self.full_swept_points = 0
+        self.missed_points = 0
         self.contact_force = np.zeros(3)
         self.contact_torque = np.zeros(3)
         self.contact_records = []
         velocity = (pts - self.prev_pts) / self.dt if self.prev_pts is not None else np.zeros_like(pts)
         for i in range(pts.shape[0]):
             cand = active[i].copy()
+            full_hit = False
             if self.prev_pts is not None:
                 hits = segment_triangle_hits(self.prev_pts[i], pts[i], tri_a, tri_b, tri_c)
                 if hits.any():
                     self.swept_hits += int(hits.sum())
                     cand = cand | hits
-            if not cand.any():
-                if not ray_inside(pts[i], pos[self.surface_full]):
-                    continue
-                cand = np.ones(len(normals), dtype=bool)
-            idx = np.nonzero(cand)[0]
-            t = idx[np.argmin(np.abs(sd[i, idx]))]
-            n = normals[t]
-            pen = self.margin - sd[i, t]
-            if pen <= 0.0:
-                pen = max(pen, 0.0)
-            vn = float(np.dot(velocity[i], n))
-            f_mag = self.k * pen - self.c * vn
-            if f_mag <= 0.0:
-                continue
-            f = f_mag * n
-            self.contact_force += f
-            self.contact_torque += np.cross(pts[i] - tip, f)
-            self.contact_points += 1
-            self.contact_records.append((int(t), bary[i, t].tolist(), (-f).tolist()))
+                full_hit = bool(segment_triangle_hits(self.prev_pts[i], pts[i], full[:, 0], full[:, 1],
+                                                      full[:, 2]).any())
+            if full_hit:
+                self.full_swept_points += 1
+            contacted = False
+            if cand.any():
+                idx = np.nonzero(cand)[0]
+                t = int(idx[np.argmin(np.abs(sd[i, idx]))])
+                pen = max(self.margin - sd[i, t], 0.0)
+            elif ray_inside(pts[i], full):
+                dist = point_triangle_distance(pts[i], tri_a, tri_b, tri_c, normals)
+                t = int(np.argmin(dist))
+                pen = self.margin + float(dist[t])
+            else:
+                t = None
+            if t is not None:
+                n = normals[t]
+                vn = float(np.dot(velocity[i], n))
+                f_mag = self.k * pen - self.c * vn
+                if f_mag > 0.0:
+                    f = f_mag * n
+                    self.contact_force += f
+                    self.contact_torque += np.cross(pts[i] - tip, f)
+                    self.contact_points += 1
+                    weights = np.clip(bary[i, t], 0.0, None)
+                    weights = weights / weights.sum()
+                    self.contact_records.append((t, weights.tolist(), (-f).tolist()))
+                    contacted = True
+            if full_hit and not contacted:
+                self.missed_points += 1
 
     def add_contact_reaction(self, forces):
         index_of = self.cmap["index_of"]
@@ -355,11 +409,8 @@ class ContactController(Sofa.Core.Controller):
         if not self.last_inside or self.entry is None:
             self.last_puncture = 0.0
             return
-        cosf = float(np.dot(self.d, self.fiber))
-        sin2 = 1.0 - cosf * cosf
-        k_eff = self.puncture_k * (sin2 + self.anisotropy * cosf * cosf)
         self.depth = max(float(np.dot(tip - self.entry, self.d)), 0.0)
-        self.last_puncture = k_eff * self.depth
+        self.last_puncture = self.k_eff * self.depth
 
     def puncture_reaction(self):
         out = {}
@@ -370,18 +421,40 @@ class ContactController(Sofa.Core.Controller):
             out[node] = share
         return out
 
+    def cut_request(self, tip, pos, inside):
+        if not (self.cut_enabled and inside and self.entry is not None):
+            return None
+        if self.tick + 1 >= self.total_steps:
+            return None
+        depth_now = max(float(np.dot(tip - self.entry, self.d)), 0.0)
+        force_now = self.k_eff * depth_now
+        if depth_now < self.cut_min_depth or force_now < self.cut_force:
+            return None
+        crossed = tets_containing(path_samples(self.prev_tip, tip, CUT_SAMPLES), pos, self.tets)
+        if not crossed.any():
+            return None
+        return {"crossed": crossed, "depth_m": depth_now, "force_n": force_now,
+                "path_start": self.prev_tip.tolist(), "path_end": tip.tolist()}
+
     def onAnimateEndEvent(self, event):
         tip, q, tau = self.tool_pose(self.tick)
         self.current_tip = tip
         pos = np.array(self.state.position.value, dtype=float)
         mesh_tip = np.array(self.needle_mesh.position.value, dtype=float)[0]
-        inside = ray_inside(tip, pos[self.surface])
-        if inside and not self.last_inside:
-            self.entry = tip.copy()
-        if not inside:
-            self.entry = None
-            self.depth = 0.0
+        inside = bool(tets_containing(tip[None, :], pos, self.tets).any())
+        if inside:
+            self.outside_ticks = 0
+            if self.entry is None:
+                self.entry = tip.copy()
+        else:
+            self.outside_ticks += 1
+            if self.outside_ticks >= EXIT_HYSTERESIS_TICKS:
+                self.entry = None
+                self.depth = 0.0
         self.last_inside = inside
+
+        cut = self.cut_request(tip, pos, inside)
+        crossed_count = int(cut["crossed"].sum()) if cut else 0
 
         f_tool = self.contact_force - self.last_puncture * self.d
         torque_tool = self.contact_torque
@@ -400,21 +473,56 @@ class ContactController(Sofa.Core.Controller):
             f"{tip[0]:.9f}", f"{tip[1]:.9f}", f"{tip[2]:.9f}",
             f"{mesh_tip[0]:.9f}", f"{mesh_tip[1]:.9f}", f"{mesh_tip[2]:.9f}",
             f"{float(pos[:, 1].max()):.9f}", self.swept_hits,
+            self.full_swept_points, self.missed_points, crossed_count, int(cut is not None),
         ])
+        self.prev_tip = tip.copy()
         self.tick += 1
+        if cut is not None:
+            self.checkpoint_and_exit(pos, cut)
         if self.tick >= self.total_steps:
             self.flush()
 
+    def checkpoint_and_exit(self, pos, cut):
+        self.flush()
+        vel = np.array(self.state.velocity.value, dtype=float)
+        rest = np.array(self.state.rest_position.value, dtype=float)
+        extra = {
+            "tick_next": self.tick,
+            "prev_tip": self.prev_tip.tolist(),
+            "last_inside": bool(self.last_inside),
+            "outside_ticks": int(self.outside_ticks),
+            "entry": None if self.entry is None else self.entry.tolist(),
+            "prev_pts": self.prev_pts.tolist(),
+            "cut_tick": self.tick - 1,
+            "cut_path_start": cut["path_start"],
+            "cut_path_end": cut["path_end"],
+            "cut_depth_m": cut["depth_m"],
+            "cut_force_n": cut["force_n"],
+            "crossed": np.nonzero(cut["crossed"])[0].tolist(),
+            "segment": self.segment,
+            "orient_sign": self.orient_sign,
+            "initial_volume_m3": self.initial_volume,
+        }
+        base = np.array(self.cmap["base"], dtype=bool)
+        save_state(os.path.join(self.out_dir, "checkpoint.json"),
+                   {"pos": pos, "vel": vel, "rest": rest, "tets": self.tets, "base": base}, extra)
+        os._exit(CUT_EXIT_CODE)
+
     def flush(self):
         os.makedirs(self.out_dir, exist_ok=True)
-        with open(os.path.join(self.out_dir, "bridge_capture.csv"), "w", encoding="utf-8", newline="\n") as handle:
+        seg = f"{self.segment:02d}"
+        with open(os.path.join(self.out_dir, f"bridge_capture_seg{seg}.csv"), "w", encoding="utf-8",
+                  newline="\n") as handle:
             handle.write(",".join(BRIDGE_HEADER) + "\n")
             for row in self.rows:
                 handle.write(",".join(str(v) for v in row) + "\n")
-        with open(os.path.join(self.out_dir, "diagnostics.csv"), "w", encoding="utf-8", newline="\n") as handle:
+        with open(os.path.join(self.out_dir, f"diagnostics_seg{seg}.csv"), "w", encoding="utf-8",
+                  newline="\n") as handle:
             handle.write(",".join(DIAG_HEADER) + "\n")
             for row in self.diag:
                 handle.write(",".join(str(v) for v in row) + "\n")
+        self.rows = []
+        self.diag = []
 
 
 def createScene(root):
@@ -426,29 +534,50 @@ def createScene(root):
     root.addObject("VisualStyle", displayFlags="showBehaviorModels showForceFields")
     root.addObject("DefaultAnimationLoop", name="animationLoop")
 
+    geometry = root.addChild("geometry")
+    loader = geometry.addObject("MeshGmshLoader", name="referenceLoader", filename=cfg["mesh_path"])
+    init_pos = np.array(loader.position.value, dtype=float)
+    init_tets = np.array(loader.tetrahedra.value, dtype=np.int64)
+    resume = cfg.get("resume")
+    if resume:
+        state, _ = load_state(cfg["checkpoint_in"])
+        orient_sign = resume["orient_sign"]
+        initial_volume = resume["initial_volume_m3"]
+    else:
+        state = {
+            "pos": init_pos.copy(),
+            "vel": np.zeros_like(init_pos),
+            "rest": init_pos.copy(),
+            "tets": init_tets,
+            "base": init_pos[:, 1] <= 1e-9,
+        }
+        orient_sign = float(np.sign(np.median(tet_dets(init_pos, init_tets))))
+        initial_volume = float(np.sum(np.abs(tet_dets(init_pos, init_tets))) / 6.0)
+    pos, vel, rest, tets, base = state["pos"], state["vel"], state["rest"], state["tets"], state["base"]
+    volume_now = float(np.sum(np.abs(tet_dets(rest, tets))) / 6.0)
+    total_mass = float(cfg["total_mass_kg"]) * volume_now / initial_volume
+    base_idx = np.nonzero(base)[0].tolist()
+
     organ = root.addChild("organ")
-    loader = organ.addObject("MeshGmshLoader", name="organLoader", filename=cfg["mesh_path"])
-    organ.addObject("TetrahedronSetTopologyContainer", name="organTopology", src="@organLoader")
+    organ.addObject("TetrahedronSetTopologyContainer", name="organTopology", position=pos.tolist(),
+                    tetrahedra=tets.tolist())
     organ.addObject("TetrahedronSetGeometryAlgorithms", template="Vec3d", name="organGeometry")
-    state = organ.addObject("MechanicalObject", name="organState", src="@organLoader")
-    organ.addObject("MeshMatrixMass", name="organMass", totalMass=cfg["total_mass_kg"])
+    state_mo = organ.addObject("MechanicalObject", name="organState", template="Vec3d", position=pos.tolist(),
+                               velocity=vel.tolist(), rest_position=rest.tolist())
+    organ.addObject("MeshMatrixMass", name="organMass", totalMass=total_mass)
     organ.addObject("EulerImplicitSolver", name="implicitSolver", rayleighMass=0.1, rayleighStiffness=0.1)
     organ.addObject("PCGLinearSolver", name="linearSolver", iterations=int(cfg.get("pcg_iterations", 25)),
                     tolerance=1e-9)
-    positions = np.array(loader.position.value, dtype=float)
-    base_idx = np.nonzero(positions[:, 1] <= 1e-9)[0].tolist()
     organ.addObject("FixedProjectiveConstraint", name="baseFixed", indices=base_idx)
     parenchyma = organ.addChild("parenchyma")
     parenchyma.addObject("TetrahedronHyperelasticityFEMForceField", name="parenchymaMaterial",
                          materialName="NeoHookean", ParameterSet="1785.714286 7142.857143")
 
-    tets = np.array(loader.tetrahedra.value, dtype=np.int64)
-    all_tris = boundary_triangles(tets, positions)
-    adj = vertex_adjacency(all_tris, len(positions))
-    top_y = float(positions[:, 1].max())
-    top_nodes = np.nonzero(positions[:, 1] >= top_y - 1e-6)[0]
-    top_point = positions[top_nodes].mean(axis=0)
-    puncture_nodes = np.argsort(np.linalg.norm(positions - top_point, axis=1))[: int(cfg["puncture_nodes"])].tolist()
+    all_tris = boundary_triangles(tets, pos)
+    adj = vertex_adjacency(all_tris, len(pos))
+    top_point = init_pos[init_pos[:, 1] >= init_pos[:, 1].max() - 1e-6].mean(axis=0)
+    top_y = float(init_pos[:, 1].max())
+    puncture_nodes = np.argsort(np.linalg.norm(pos - top_point, axis=1))[: int(cfg["puncture_nodes"])].tolist()
 
     tool_local, tool_tris, cone_len = tool_geometry(
         float(cfg["shaft_radius_m"]), float(cfg["cone_half_deg"]),
@@ -457,10 +586,11 @@ def createScene(root):
     d = np.array([math.sin(math.radians(cfg["angle_deg"])), -math.cos(math.radians(cfg["angle_deg"])), 0.0])
     clearance = float(cfg["clearance_mm"]) * 1e-3
     depth_target = float(cfg["depth_mm"]) * 1e-3
-    start_tip = top_point - clearance * d
-    end_tip = top_point + depth_target * d
+    entry_point = top_point + np.array(cfg["entry_offset_m"], dtype=float)
+    start_tip = entry_point - clearance * d
+    end_tip = entry_point + depth_target * d
     end_travel = clearance + depth_target
-    corridor = corridor_vertices(positions, start_tip, end_tip,
+    corridor = corridor_vertices(pos, start_tip, end_tip,
                                  float(cfg["corridor_mm"]) * 1e-3, int(cfg["ring_k"]), adj)
     culled_tris = all_tris[np.array([all(v in corridor for v in tri) for tri in all_tris], dtype=bool)]
     contact_nodes = sorted(set(int(v) for tri in culled_tris for v in tri))
@@ -478,13 +608,17 @@ def createScene(root):
     tool_child.addObject("RigidMapping", name="needleRigidMapping", template="Rigid3d,Vec3d",
                          input="@../needleRigid", output="@needlePoints", index=0)
 
+    segment = int(resume["segment"]) + 1 if resume else 0
+    seg_tag = f"{segment:02d}"
     scene_build = {
+        "segment": segment,
+        "start_tick": int(resume["tick_next"]) if resume else 0,
         "surface_triangles_full": int(len(all_tris)),
         "surface_triangles_culled": int(len(culled_tris)),
         "corridor_vertices": int(len(corridor)),
         "contact_nodes": int(len(contact_nodes)),
         "puncture_nodes": int(len(puncture_nodes)),
-        "vertices": int(len(positions)),
+        "vertices": int(len(pos)),
         "tets": int(len(tets)),
         "base_fixed_nodes": int(len(base_idx)),
         "tool_triangles": int(len(tool_tris)),
@@ -492,21 +626,27 @@ def createScene(root):
         "cone_length_m": cone_len,
         "organ_top_y_m": top_y,
         "top_point_m": top_point.tolist(),
+        "entry_point_m": entry_point.tolist(),
         "start_tip_m": start_tip.tolist(),
         "end_tip_m": end_tip.tolist(),
         "candidate_pairs_full": int(len(all_tris) * len(tool_tris)),
         "candidate_pairs_culled": int(len(culled_tris) * len(tool_tris)),
         "gravity_m_s2": gravity,
+        "total_mass_kg": total_mass,
+        "orient_sign": orient_sign,
+        "initial_volume_m3": initial_volume,
+        "volume_m3": volume_now,
     }
     os.makedirs(cfg["out_dir"], exist_ok=True)
-    with open(os.path.join(cfg["out_dir"], "scene_build.json"), "w", encoding="utf-8", newline="\n") as handle:
+    with open(os.path.join(cfg["out_dir"], f"scene_build_seg{seg_tag}.json"), "w", encoding="utf-8",
+              newline="\n") as handle:
         json.dump(scene_build, handle, indent=2)
         handle.write("\n")
 
     controller = ContactController(
-        cfg, state, needle_rigid, needle_mesh, cff, all_tris, culled_tris,
-        {"nodes": union_nodes, "index_of": index_of},
+        cfg, state_mo, needle_rigid, needle_mesh, cff, all_tris, culled_tris,
+        {"nodes": union_nodes, "index_of": index_of, "base": base},
         puncture_nodes, tool_local, start_tip, end_travel, d,
-        name="contactController")
+        tets, resume, segment, orient_sign, initial_volume, name="contactController")
     root.addObject(controller)
     return root

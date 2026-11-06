@@ -31,6 +31,8 @@ Task 2.2 output (SRS FR-MS-002, FR-MS-003). Pinned install: SOFA v26.06.00 at
   `-DSRTA_BUILD_SOFA=ON` (root option, default OFF). Reports the found SOFA
   version and `runSofa.exe` path.
 * `vv/tests/OQ/test_oq_fr_ms_002_solver_rate.py` - the G2.2 slice-1 OQ test.
+* `src/contact_scene.py`, `src/cut_topology.py`, `src/run_contact_suite.py` -
+  task 2.3 contact, cutting, and the parameterized suite (see the sections below).
 
 ## How to run
 
@@ -109,7 +111,7 @@ The SOFA collision pipeline (`CCDTightInclusionIntersection`, or
 was configured in this build and produced no contact response, so it is not used
 in the scene.
 
-### Puncture resistance (first model)
+### Puncture resistance (first model, calibrated in slice 2)
 
 Directional resistance along the insertion direction, driven by the depth `s`
 of the tip past its entry point:
@@ -118,10 +120,85 @@ of the tip past its entry point:
 
 * `phi` is the angle between the insertion direction and the fiber direction
   (fixed to the x axis).
-* `K_perp = 100 N/m`, `A = 2.0`. The anisotropy ratio A is a model placeholder
-  with no literature source in this slice. It is unvalidated.
+* `K_perp = 430 N/m` (cited, see Calibration). `A = 2.0` is an uncited model
+  choice.
 * The force acts opposite the insertion on the tool and is distributed to the
   four organ nodes nearest the entry region.
+
+### Cutting model (task 2.3 slice 2)
+
+The tip is inside the organ when it lies in a tetrahedron of the current mesh
+(barycentric containment, `cut_topology.tets_containing`). The entry point is set
+at the first inside tick and reset only after 50 consecutive ticks outside
+(`EXIT_HYSTERESIS_TICKS`, uncited choice). The raw inside state gates the puncture
+force and the cut. The slice-1 ray-parity test is kept only for the contact
+fallback. The ray-parity state flickered at the top face in the slice-2 debug
+trials, which kept the depth below 1 mm at 10 mm/s.
+
+A cut is requested by the scene controller at tick t when all of these hold:
+
+* the tool tip is inside the organ (above),
+* the penetration `s` past the entry point is at least `cut_min_depth_mm` (1.0 mm,
+  uncited choice),
+* the axial puncture force `F_p = K(phi) s` is at least `cut_force_n`, which is
+  `G_c w` with `G_c = 164 J/m^2` (cited) and `w = 1.0 mm` (the tool width,
+  uncited choice). This gives `F_cut = 0.164 N`,
+* the tip path from tick t-1 to tick t crosses at least one tetrahedron. The path
+  is sampled at 9 points, and a tetrahedron is crossed when a sample lies inside it
+  (barycentric test).
+
+Topology change. SOFA's `TetrahedronSetTopologyModifier.removeTetrahedra` exists in
+the pinned build, but SofaPython3 does not bind it (the modifier exposes only
+its Data fields), and an in-process rebuild of the organ subgraph failed in a
+probe (`Cannot find triangle ... in tetrahedron`). A cut therefore uses a
+checkpoint and restart:
+
+1. The controller writes the segment captures and `checkpoint.json` (node
+   positions and velocities, the rest configuration, tetrahedra, base flags, and
+   the controller resume values), then exits with code 10 (`os._exit`; the
+   process exit code is 10, and SOFA prints a backtrace banner on the way out).
+2. The driver (`run_contact_suite.py`) recomputes the crossed set from the tip
+   path with `cut_topology.tets_containing` and compares it with the scene's set.
+3. `cut_topology.apply_cut` removes the crossed tetrahedra and applies the
+   release rule (below), then compacts the node numbering. Orphaned nodes are
+   removed and the references are renumbered.
+4. `cut_topology.check_integrity` runs on the new state. The next runSofa segment
+   starts at tick t+1 from the edited state, with the same capture file series.
+
+Release rule. The neighborhood is the set of tetrahedra that share a node with a
+crossed tetrahedron (one ring, `release_rings = 1`, uncited choice). Their stored
+strain energy is the compressible Neo-Hookean energy, with the
+ParameterSet values (mu = 1785.714286 Pa, lambda = 7142.857143 Pa) taken as the
+Lame pair. This energy is recorded as `neighborhood_energy_before_j`. The rest
+configuration of every node in the neighborhood is then reset to its current
+position, which releases the neighborhood strain to zero at the cut instant
+(`neighborhood_energy_after_j`, about 1e-18 J). The released energy, the removed
+tetrahedron energy, and the counts are in each cut record in the suite summary.
+The rest reset also changes the FEM reference state, so the mass is recomputed
+from the surviving rest volume (the total mass scales with the rest volume).
+
+Integrity checks after every cut (`cut_topology.check_integrity`): every
+tetrahedron references four distinct valid nodes, no node is orphaned, no
+tetrahedron is inverted in the current or the rest configuration (sign equal to
+the reference mesh orientation), no face is shared by more than two tetrahedra,
+there is at least one boundary face, the tetrahedra form one connected component,
+and all values are finite. A failed check ends the trial with the failure recorded.
+
+Contact after a cut. The culled candidate set is recomputed from the current
+boundary and the same corridor on every segment, so the cut faces are candidates
+from the next segment on.
+
+### Contact fallback correction (slice 2)
+
+The nearest-culled-face fallback (a tool point inside the organ with no candidate)
+ranked faces by distance to their planes. It now uses the point-to-triangle
+distance (plane distance inside the projection, else the nearest edge), and the
+reaction weights are clamped to the face and renormalized. The slice-1 smoke
+trials are not rerun with this change, so their recorded values stand as slice-1
+results. In the slice-2 debug trial, this change did not alter the 28 N contact
+transient at cavity re-entry, which comes from the candidate path (points deep in
+the tissue under the penalty term). That transient is a penalty-model artifact and
+is recorded as such.
 
 ### Smoke suite
 
@@ -132,14 +209,96 @@ point), wrench finite and non-zero on every contact step, bridge schema and
 timing checks, and culling reduction. This is a smoke suite, not the G2.3 gate
 suite (1000 trials, with dissection and cutting in slice 2).
 
-### Known limits (slice 1)
+### Calibration (slice 2)
+
+| Parameter | Value | Status | Source |
+|---|---|---|---|
+| `puncture_k_perp` (K_perp) | 430 N/m | cited, transferred from a phantom | Roesthuis RJ, van Veen YRJ, Jahya A, Misra S. Mechanics of needle-tissue interaction. IROS 2011. Interaction stiffness Ke = 430 N/m in their gelatine phantom simulation (Fig. 12). |
+| `puncture_anisotropy` (A) | 2.0 | uncited model choice | none |
+| `contact_stiffness` (k) | 100 N/m | uncited model choice | none found |
+| `contact_damping` (c) | 0.5 N s/m | uncited model choice | none found |
+| `contact_m` (margin) | 0.5 mm | uncited model choice | none |
+| Fracture toughness G_c | 164 J/m^2 | cited, bovine liver | Gokgol C, Basdogan C, Canadinc D. Estimation of fracture toughness of liver tissue: experiments and validation. Med Eng Phys. 2012;34(7):882-891 (PMID 22024208). Reported value J = 164 +/- 6 J/m^2. |
+| Cut width w | 1.0 mm | uncited geometry choice | twice the 0.5 mm shaft radius |
+| Cut force F_cut = G_c w | 0.164 N | derived from the two rows above | none |
+| `cut_min_depth_mm` | 1.0 mm | uncited model choice | none |
+| `release_rings` | 1 | uncited model choice | none |
+| NeoHookean (mu, lambda) | 1785.714286, 7142.857143 Pa | reference scene ParameterSet, monitor only | `src/reference_scene.scn` |
+| Shaft friction | not implemented | cited value 0.0265 N/mm (10 mm/s), 0.0339 N/mm (20 mm/s), gelatine phantom | Roesthuis et al. 2011 (above) |
+
+Notes on the sources:
+
+* The Okamura model structure (capsule stiffness, friction, cutting) is cited from
+  Okamura AM, Simone C, O'Leary MD. Force modeling for needle insertion into soft
+  tissue. IEEE Trans Biomed Eng. 2004;51(10):1707-1716 (DOI 10.1109/TBME.2004.831542).
+  No numeric cutting constant is taken from it, because the full text was not read.
+* The Ke and friction values were read from the paper's Fig. 12 label and
+  conclusions in the search index. The PDF could not be fetched in this session, so
+  the values are recorded from those excerpts, and the paper should be checked
+  against the full text before the G2.3 closure.
+* The stiffness value is for a bevel-tip needle in gelatine, not liver. Its use as
+  K_perp for liver is a transfer assumption.
+* No citable source was found for the penalty stiffness, damping, or the
+  anisotropy ratio A in the time available. These stay as uncited model choices.
+
+### Suite harness and checks (slice 2)
+
+`src/run_contact_suite.py` runs the grid and writes
+`SNDEV/logs/task23-cut-<label>/` (per-trial segment files, `T###/bridge_capture.csv`,
+`T###/diagnostics.csv`, and `summary.json`). Grid: 10 speeds (10, 20, 40, 60, 80,
+100, 120, 150, 180, 200 mm/s), 5 entry angles (0, 10, 15, 20, 30 degrees), and 2 entry
+points (the top-surface point, and the same point offset 3 mm in z). That is 100
+trials. The cut parameters are the calibrated values above (the runner builds them
+from `CALIBRATION` in the script).
+
+```powershell
+python sim\sofa\src\run_contact_suite.py --label <label> [--limit N] [--workers N]
+```
+
+Per-trial checks (a trial passes when all nine pass):
+
+* `contact_detected`: at least one contact step.
+* `zero_tunneling`: no step has the tip inside the organ with zero contact points.
+* `zero_missed_contacts`: no tool point has a full-boundary swept hit without a contact
+  record at that tick. The full-boundary test is independent of the culled candidate
+  set.
+* `finite_wrench`: the wrench is finite, and non-zero on every contact step.
+* `topology_integrity`: every cut passes `check_integrity`, and the driver's crossed set
+  equals the scene's crossed set.
+* `capture_schema`: exact header, consecutive ticks from 0 across all segments, row count
+  equal to the trial steps, time_s on the 1 kHz grid, unit quaternions, finite values.
+* `wrench_continuity`: a capture row exists on both sides of every cut, and the wrench is
+  finite there.
+* `culling_reduction`: the culled set is smaller than the full boundary in every segment.
+* `exit_clean`: the last segment exits with code 0 and no `[ERROR]` line other than the
+  install-level `readBasicIniFile()` message.
+
+### Known limits (slices 1 and 2)
 
 * Gravity is 0 in the contact scene. With gravity on, the reference base fixation
   does not hold the organ (the organ sinks through its own fixed face). The same
   defect applies to `reference_scene.scn`, and the G2.2 timing result does not
   validate the physical state.
 * The swept test samples the tool points only. Edges between points are not swept.
-* Peak contact forces (up to 65 N at 60 mm/s) exceed realistic needle forces. The
-  penalty stiffness and damping are not calibrated.
-* The puncture anisotropy ratio and the resistance constants are placeholders.
-* Dissection, cutting, and the 1000-trial G2.3 suite are slice 2.
+* Peak contact forces are penalty transients, not calibrated needle forces. In the
+  slice-2 pilot the largest contact peak was 70.7 N (T081, 180 mm/s), against a
+  largest puncture peak of 3.6 N. The penalty stiffness and damping are uncited.
+  The transients displace the organ top by several millimetres (T081 at tick 180).
+* The wrench step at a cut is not a separate cutting signature in this model. In the
+  pilot, the median absolute step in the wrench at a cut tick is 2.30 N (198 cut
+  events), while the 99th percentile over all other ticks is 3.54 N, and the median
+  over all other ticks is 0. Cut steps lie inside the ordinary tick distribution.
+* Two pilot trials fail the tunneling and missed-contact checks (see the slice-2 log
+  for the per-trial evidence): T081 (one tunneling step at tick 181, following a
+  70 N penalty transient) and T099 (four missed tool points at tick 185 in the
+  cut channel). The 100-trial pilot is not a passing gate result.
+* The cut is an approximation. Removing whole tetrahedra on the coarse 20 mm mesh
+  (element size of a few millimetres) removes a channel several elements wide
+  relative to the 1 mm tool. The mesh resolution is the main limit on cut geometry.
+* Topology change uses checkpoint and restart, not an in-process topology edit (see
+  the cutting model). Each cut is a process restart, so trial time grows with the
+  number of cuts.
+* Shaft friction is not in the wrench model, although a cited value exists.
+* The puncture anisotropy ratio A is an uncited placeholder.
+* The 1000-trial G2.3 suite is not run. The pilot validates the harness and the checks
+  only.

@@ -1,0 +1,131 @@
+{
+  "schema": "g21-scene-mesh-v1",
+  "generated_utc": "2026-11-06T12:05:15Z",
+  "is_g21_reference": false,
+  "source_note": "TCIA HCC-TACE-Seg HCC_001 CT, CC BY 4.0; smoke dataset, not G2.1 reference data",
+  "sources": {
+    "liver": {
+      "segment": "parenchyma_liver",
+      "labelmap": "parenchyma_liver_labelmap.nrrd",
+      "labelmap_sha256": "1979e90418e7fd90d1a44bb90161769ed33718d6aa7394324921830bb23145e0",
+      "labelmap_bytes": 53825,
+      "stl": "parenchyma_liver_mesh.stl",
+      "stl_sha256": "f51ffecfa09300d50d64565c1943b5f0518633083aeaee7c29d007c5c78ad561",
+      "stl_bytes": 12730884,
+      "stl_triangles": 254616,
+      "voxel_count_sidecar": 547793,
+      "is_g21_reference": false
+    },
+    "keepout": {
+      "segment": "vascular_keepout_bone_excluded",
+      "labelmap": "vascular_keepout_bone_excluded_labelmap.nrrd",
+      "labelmap_sha256": "01a3c44aa475b3573286d829c63eca2b43f109343edf42959b57a5202ff3958d",
+      "labelmap_bytes": 34316,
+      "stl": "vascular_keepout_bone_excluded_mesh.stl",
+      "stl_sha256": "a56fcfc9f81176f3e95e1c3a3603dd511179ceb9ede214b990fb714b78efd264",
+      "stl_bytes": 5361384,
+      "stl_triangles": 107226,
+      "voxel_count_sidecar": 96018,
+      "is_g21_reference": false
+    },
+    "tumor": {
+      "segment": "tumor_hypoattenuating",
+      "labelmap": "tumor_hypoattenuating_labelmap.nrrd",
+      "labelmap_sha256": "92ca73aa18160d5f170a2d12f3fb749583c7a5d2e0718469f811100760369be5",
+      "labelmap_bytes": 9547,
+      "stl": "tumor_hypoattenuating_mesh.stl",
+      "stl_sha256": "f6a500a0e00953f170c255908c54ba5dbf694740d48a47413b819be4eaf11001",
+      "stl_bytes": 84,
+      "stl_triangles": 0,
+      "voxel_count_sidecar": 0,
+      "is_g21_reference": false
+    }
+  },
+  "tools": {
+    "python": "3.14.3",
+    "numpy": "2.4.4",
+    "script": "sim/sofa/src/prepare_g21_meshes.py"
+  },
+  "decimation": {
+    "cell_mm": 16.0,
+    "target_tet_range": [
+      2000,
+      8000
+    ],
+    "within_target_range": true,
+    "subsamples_per_axis": 4,
+    "occupancy_fraction": 0.5,
+    "grid_cells_xyz": [
+      15,
+      12,
+      11
+    ],
+    "occupied_cells_before_fill": 416,
+    "holes_filled_cells": 0,
+    "largest_component_dropped_cells": 1,
+    "occupied_cells": 415,
+    "tet_split": "six tetrahedra per cell around the 000-111 diagonal"
+  },
+  "keepout": {
+    "representation": "signed distance field at every scene node plus boundary points",
+    "margin_mm": 1.0,
+    "margin_note": "the 1.0 mm margin is in the vascular_keepout labelmap (sidecar keepout_margin_mm)",
+    "boundary_voxels": 35169,
+    "lattice_mm": 5.0,
+    "lattice_points": 1978,
+    "nodes_inside": 20,
+    "distance_min_m": -0.004911572,
+    "distance_max_m": 0.131343793
+  },
+  "counts": {
+    "nodes": 733,
+    "tetrahedra_organ": 2490,
+    "tetrahedra_parenchyma": 2490,
+    "tetrahedra_tumor": 0,
+    "surface_triangles_organ": 1112,
+    "tet_volume_min_m3": 6.826666666666655e-07,
+    "tet_volume_max_m3": 6.826666666666685e-07,
+    "base_nodes": 21
+  },
+  "scene": {
+    "frame": "x = RAS x - min, y = RAS z - min (superior), z = max RAS y - RAS y (posterior), metres",
+    "total_volume_m3": 0.0016998400000000006,
+    "density_kg_m3": 1000.0,
+    "total_mass_kg": 1.6998400000000007,
+    "base_fixation_box_m": [
+      -0.0005,
+      -0.0005,
+      -0.0005,
+      0.2245,
+      0.0005,
+      0.1765
+    ]
+  },
+  "outputs": [
+    {
+      "file": "reference_organ.msh",
+      "bytes": 102615,
+      "sha256": "11b099e1b8916e0ef927cc5f19f9251612335a43e09d7ab5a9a20be699d5f0e6"
+    },
+    {
+      "file": "reference_organ_parenchyma.msh",
+      "bytes": 102615,
+      "sha256": "11b099e1b8916e0ef927cc5f19f9251612335a43e09d7ab5a9a20be699d5f0e6"
+    },
+    {
+      "file": "reference_organ_tumor.msh",
+      "bytes": 30035,
+      "sha256": "9ac61afd87e61f72922daa7332b16918dc0e2af72b2bb4d53b774479660015e4"
+    },
+    {
+      "file": "vessel_keepout_points.msh",
+      "bytes": 119409,
+      "sha256": "7730f0598ecb6764b30344b5e11b83a136b1001c1a257cb41bb4d3f556b90cd5"
+    },
+    {
+      "file": "keepout_distance_nodes.json",
+      "bytes": 18461,
+      "sha256": "e7523b2b4d4aa0ce260627b8e6bd439bf7e736d00fbdba862c10ec44b700fa16"
+    }
+  ]
+}

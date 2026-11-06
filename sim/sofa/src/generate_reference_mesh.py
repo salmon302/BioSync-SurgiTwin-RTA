@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: MIT
-"""Deterministic generator for the G2.2 reference scene meshes.
+"""Deterministic generator for the G2.2 placeholder reference scene meshes.
+
+Retired by task 2.2 slice 3: the scene now loads the G2.1 meshes from
+prepare_g21_meshes.py, and this script refuses to run once
+meshes/g21_provenance.json exists. It remains for reproducing the slice-1
+placeholder block.
 
 Emits four Gmsh 2.2 ASCII files under sim/sofa/src/meshes/:
 
@@ -140,6 +145,10 @@ def build_centerline():
 
 
 def main():
+    if (MESH_DIR / "g21_provenance.json").exists():
+        raise SystemExit(
+            "meshes hold G2.1 output (g21_provenance.json); this placeholder "
+            "generator is retired and would overwrite them")
     positions, tetrahedra = build_organ()
     tumor, parenchyma = split_tumor(positions, tetrahedra)
     center_positions, edges = build_centerline()

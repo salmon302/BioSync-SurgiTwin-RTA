@@ -1,0 +1,4 @@
+# Exact pins for sim/sofa/src/prepare_g21_meshes.py (task 2.2 slice 3). The
+# script uses numpy only (no meshing library). Observed in the host Python
+# 3.14.3 (C:\Python314, win_amd64) on 2026-11-06. Install: python -m pip install -r sim/sofa/requirements.txt
+numpy==2.4.4

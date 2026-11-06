@@ -6,15 +6,23 @@ Task 2.2 output (SRS FR-MS-002, FR-MS-003). Pinned install: SOFA v26.06.00 at
 ## Contents
 
 * `src/reference_scene.scn` - THE pinned G2.2 reference scene: hyperelastic
-  parenchymal organ (NeoHookean `TetrahedronHyperelasticityFEMForceField` on
-  disjoint parenchyma/tumor subsets of a shared mechanical state), implicit
-  solver chain (`EulerImplicitSolver` + `PCGLinearSolver`), fixed base slab,
-  gravity `0 -9.81 0`, and a `VasculatureKeepOut` centerline node with no
-  material coupling yet (coupling is a later task for FR-RTA-003).
-* `src/generate_reference_mesh.py` + `src/meshes/` - deterministic mesh
-  generator (organ block, tumor/parenchyma subsets, keep-out centerline).
-  Regenerate with `python sim/sofa/src/generate_reference_mesh.py`.
-  Placeholder meshes until gate G2.1 segmentation meshes land.
+  liver parenchyma (NeoHookean `TetrahedronHyperelasticityFEMForceField` on the
+  G2.1 envelope, with a disjoint tumor subset that is empty on HCC_001), implicit
+  solver chain (`EulerImplicitSolver` + `PCGLinearSolver`), a fixed inferior
+  node plane, gravity `0 -9.81 0`, and a `VasculatureKeepOut` node with the
+  keep-out boundary points and no material coupling yet (coupling is a later
+  task for FR-RTA-003).
+* `src/prepare_g21_meshes.py` + `requirements.txt` - converts the G2.1
+  labelmaps under `sim/segmentation/output/tcia-hcc-tace-seg-hcc001/` into the
+  scene meshes in `src/meshes/`: the liver envelope decimated to a 16 mm grid
+  (733 nodes, 2490 tets), the keep-out boundary points, and the keep-out
+  signed distance at every scene node. Provenance (source and output
+  checksums, tool versions, decimation parameters, counts) is in
+  `src/meshes/g21_provenance.json`. Regenerate with
+  `python sim\sofa\src\prepare_g21_meshes.py`, optionally `--cell-mm <mm>`.
+* `src/generate_reference_mesh.py` - retired slice-1 placeholder generator
+  (1296 tets). It refuses to run while `src/meshes/g21_provenance.json` exists,
+  so it cannot overwrite the G2.1 meshes.
 * `src/run_reference_scene.py` - headless step-timing harness. Runs the scene
   through `runSofa.exe -g batch -n <steps> --computationTimeSampling 1`,
   reports mean/p95/max step time against the 16.7 ms frame budget, runs the
@@ -27,6 +35,8 @@ Task 2.2 output (SRS FR-MS-002, FR-MS-003). Pinned install: SOFA v26.06.00 at
 ## How to run
 
 ```powershell
+python -m pip install -r sim\sofa\requirements.txt
+python sim\sofa\src\prepare_g21_meshes.py
 python sim\sofa\src\run_reference_scene.py --steps 1000 --label run
 python -m pytest vv\tests\OQ\test_oq_fr_ms_002_solver_rate.py -v
 cmake -S . -B build\sofa-check -DSRTA_BUILD_SOFA=ON -DSofa_DIR=C:\Users\salmo\SOFA\v26.06.00\lib\cmake\Sofa.Framework

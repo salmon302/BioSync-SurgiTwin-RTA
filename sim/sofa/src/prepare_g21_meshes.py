@@ -15,7 +15,9 @@ into the Gmsh 2.2 files that reference_scene.scn loads from sim/sofa/src/meshes/
 Decimation (the remesh level is the design parameter, --cell-mm):
 
 1. The liver labelmap is sampled on an isotropic grid of cells of --cell-mm
-   (default 16 mm, 2490 tets, the low end of the 2000 to 8000 tet range).
+   (default 20 mm, 1230 tets, the budget-fit level selected 2026-11-06; the
+   original 2000 to 8000 tet range was superseded by that ruling, and the
+   stable scanned levels are 16, 17, 18, and 20 mm).
    A cell is occupied when at least half of its 4 x 4 x 4 sub-samples fall
    inside the labelmap (nearest-voxel lookup).
 2. Cell-level holes are filled and only the largest face-connected component
@@ -60,7 +62,7 @@ SOURCE_STEMS = {
     "keepout": "vascular_keepout_bone_excluded",
     "tumor": "tumor_hypoattenuating",
 }
-DEFAULT_CELL_MM = 16.0
+DEFAULT_CELL_MM = 20.0
 TARGET_TET_RANGE = (2000, 8000)
 SUBSAMPLES = 4
 OCCUPANCY_FRACTION = 0.5
@@ -473,8 +475,8 @@ def main(argv=None):
         "schema": "g21-scene-mesh-v1",
         "generated_utc": datetime.datetime.now(datetime.timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"),
-        "is_g21_reference": False,
-        "source_note": "TCIA HCC-TACE-Seg HCC_001 CT, CC BY 4.0; smoke dataset, not G2.1 reference data",
+        "is_g21_reference": True,
+        "source_note": "TCIA HCC-TACE-Seg HCC_001 CT, CC BY 4.0; G2.1 reference set (SRS v1.4.0, VAL-030 to VAL-032)",
         "sources": sources,
         "tools": {
             "python": platform.python_version(),

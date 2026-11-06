@@ -10,8 +10,8 @@
   example patterns from the pinned SOFA v26.06.00 install.
 
   Mesh input (task 2.2 slice 3): the G2.1 liver envelope (parenchyma_liver,
-  chain v4) decimated onto a 16 mm grid by sim/sofa/src/prepare_g21_meshes.py,
-  giving 733 nodes and 2490 tetrahedra. The decimation parameters, source
+  chain v4) decimated onto a 20 mm grid by sim/sofa/src/prepare_g21_meshes.py,
+  giving 405 nodes and 1230 tetrahedra (the budget-fit level, selected 2026-11-06; 16, 17, 18, and 19 mm levels are recorded in SNDEV/docs/impl-2026-11-06-g22-budget-fit.md). The decimation parameters, source
   checksums, and output checksums are in meshes/g21_provenance.json. The
   1296-tet placeholder block of generate_reference_mesh.py is retired.
 
@@ -32,15 +32,23 @@
   task.
 
   Mass: the parenchyma density of 1000 kg/m^3 over the decimated envelope
-  volume (0.00169984 m^3) gives 1.699840 kg. The slice-1 mass was 0.064 kg for
+  volume (0.00164 m^3) gives 1.640000 kg. The slice-1 mass was 0.064 kg for
   the 0.04 m placeholder cube.
 
   Vascular keep-out: the VasculatureKeepOut node holds the keep-out boundary
   points on a 5 mm lattice only. It has no force field, no mass, and no
   mapping, so there is no material coupling yet. The keep-out survives the
-  16 mm decimation as a signed distance field at every scene node
+  20 mm decimation as a signed distance field at every scene node
   (meshes/keepout_distance_nodes.json, negative inside the keep-out including
   the 1.0 mm margin). Coupling feeds the FR-RTA-003 envelope in a later task.
+
+  Resolution boundary: the scene resolution (decimation cell size, 20 mm
+  here) is a documented design parameter. The full-resolution G2.1 geometry
+  stays in the offline and reduced-order path (bridge modal coefficients, FMU
+  reduced-order models). With this solver chain (25 PCG iterations), the scene
+  is validated only at the scanned stable levels 16, 17, 18, and 20 mm. The
+  15 and 19 mm levels invert elements under this chain (PCG breakdown) and are
+  not valid reference scenes.
 
   Changing this scene re-opens gate G2.2: it is THE pinned reference scene.
   Mesh inputs are regenerated with prepare_g21_meshes.py.
@@ -69,15 +77,15 @@
         <TetrahedronSetGeometryAlgorithms name="organGeometry"/>
         <MechanicalObject name="organState" src="@organLoader"/>
 
-        <!-- Parenchyma density 1000 kg/m^3 over the 0.00169984 m^3 decimated liver envelope. -->
-        <MeshMatrixMass name="organMass" totalMass="1.699840"/>
+        <!-- Parenchyma density 1000 kg/m^3 over the 0.00164 m^3 decimated liver envelope (20 mm grid). -->
+        <MeshMatrixMass name="organMass" totalMass="1.640000"/>
 
         <EulerImplicitSolver name="implicitSolver" rayleighMass="0.1" rayleighStiffness="0.1"/>
         <PCGLinearSolver name="linearSolver" iterations="25" tolerance="1e-9"/>
 
         <!-- Fix the inferior node plane (y = 0, 21 nodes) so the organ deforms under
              gravity without drifting. Box from meshes/g21_provenance.json scene.base_fixation_box_m. -->
-        <BoxROI name="baseFixation" box="-0.0005 -0.0005 -0.0005 0.2245 0.0005 0.1765" drawBoxes="0"/>
+        <BoxROI name="baseFixation" box="-0.0005 -0.0005 -0.0005 0.2005 0.0005 0.1805" drawBoxes="0"/>
         <FixedProjectiveConstraint name="baseFixed" indices="@baseFixation.indices"/>
 
         <!-- Positions dumped every 10 ms for the harness divergence check. -->

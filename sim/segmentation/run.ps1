@@ -19,7 +19,7 @@ $env:SURGITWIN_SERIES_UID = $SeriesUid
 $env:SURGITWIN_DATASET_ID = $DatasetId
 $env:SURGITWIN_OUTPUT_ROOT = Join-Path $SegDir "output"
 $env:SURGITWIN_SCRIPT = $Script
-$env:SURGITWIN_SOURCE_NOTE = "TCIA HCC-TACE-Seg HCC_001 CT, CC BY 4.0; smoke dataset, not G2.1 reference data"
+$env:SURGITWIN_SOURCE_NOTE = "TCIA HCC-TACE-Seg HCC_001 CT, CC BY 4.0; G2.1 reference set (SRS v1.4.0, VAL-030 to VAL-032)"
 
 if (-not (Test-Path $SlicerExe)) { throw "Slicer not found at $SlicerExe" }
 

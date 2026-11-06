@@ -14,8 +14,8 @@ Task 2.2 output (SRS FR-MS-002, FR-MS-003). Pinned install: SOFA v26.06.00 at
   task for FR-RTA-003).
 * `src/prepare_g21_meshes.py` + `requirements.txt` - converts the G2.1
   labelmaps under `sim/segmentation/output/tcia-hcc-tace-seg-hcc001/` into the
-  scene meshes in `src/meshes/`: the liver envelope decimated to a 16 mm grid
-  (733 nodes, 2490 tets), the keep-out boundary points, and the keep-out
+  scene meshes in `src/meshes/`: the liver envelope decimated to a 20 mm grid
+  (405 nodes, 1230 tets; the budget-fit level), the keep-out boundary points, and the keep-out
   signed distance at every scene node. Provenance (source and output
   checksums, tool versions, decimation parameters, counts) is in
   `src/meshes/g21_provenance.json`. Regenerate with

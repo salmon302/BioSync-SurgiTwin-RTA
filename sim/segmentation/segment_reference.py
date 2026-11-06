@@ -961,7 +961,7 @@ def main():
             "mesh_method": "vtkDiscreteMarchingCubes on exported labelmap, transformed to RAS",
             "mesh_triangles": mesh_cells,
             "voxel_count": voxels,
-            "is_g21_reference": False,
+            "is_g21_reference": True,
         })
         if name == VESSEL:
             prov["keepout_margin_mm"] = VESSEL_DILATE_MM[VESSEL_VARIANT] if VESSEL_VARIANT in VESSEL_DILATE_MM else VESSEL_MARGIN_MM
@@ -979,7 +979,7 @@ def main():
     manifest = {
         "dataset_id": dataset_id,
         "generated_utc": stamp,
-        "is_g21_reference": False,
+        "is_g21_reference": True,
         "source_note": source_note,
         "volume_uid": series_uid,
         "volume_node_name": vol.GetName(),

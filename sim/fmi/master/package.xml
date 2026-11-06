@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<!-- SPDX-License-Identifier: MIT -->
+<package format="3">
+  <name>srtra_fmi_master</name>
+  <version>0.1.0</version>
+  <description>SurgiTwin-RTA FMI 3.0 co-simulation master (scheduler, FMU adapter, master clock and participant state over Fast DDS; SRS FR-MS-007).</description>
+  <maintainer email="sethnenninger@gmail.com">Seth Nenninger</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -288,6 +288,47 @@ def case_ablation(unzip_dir, md):
     }
 
 
+def case_reset(unzip_dir, md):
+    fmu = Fmu(unzip_dir, md)
+    slave = fmu.slave
+    slave.instantiate(visible=False, loggingOn=False)
+    slave.enterInitializationMode(startTime=0.0, stopTime=T_STOP_A)
+    fmu.set_values(["P_abl", "h_bc", "T_env"], [5.0, 0.0, T_A])
+    slave.exitInitializationMode()
+
+    def run(n_steps):
+        rows = []
+        for n in range(n_steps):
+            fmu.set_values(["P_abl"], [5.0])
+            fmu.do_step(n * STEP, STEP)
+            rows.append(fmu.get_values(OUTPUTS))
+        return rows
+
+    first = run(200)
+    slave.fmi3Reset(slave.component)
+    # w_b is changed before reset. After fmi3Reset the instantiation default must be back, so the second run
+    # without setting w_b must reproduce the first run exactly.
+    fmu.set_values(["w_b"], [0.0])
+    slave.fmi3Reset(slave.component)
+    slave.enterInitializationMode(startTime=0.0, stopTime=T_STOP_A)
+    fmu.set_values(["P_abl", "h_bc", "T_env"], [5.0, 0.0, T_A])
+    slave.exitInitializationMode()
+    second = run(200)
+    slave.terminate()
+    slave.freeInstance()
+
+    max_dev = max(abs(a - b) for row_a, row_b in zip(first, second) for a, b in zip(row_a, row_b))
+    passed = max_dev == 0.0
+    return {
+        "name": "R1_reset_restores_instantiation_defaults",
+        "description": "run 200 steps at default parameters, set w_b=0, fmi3Reset, re-initialize without setting parameters, run 200 steps; the second run must equal the first",
+        "steps_per_run": 200,
+        "tolerance": 0.0,
+        "max_abs_deviation_between_runs": max_dev,
+        "pass": passed,
+    }
+
+
 def case_error_paths(unzip_dir, md):
     fmu = Fmu(unzip_dir, md)
     slave = fmu.slave
@@ -349,6 +390,7 @@ def main():
             case_cooling(unzip_dir, md),
             case_ablation(unzip_dir, md),
             case_error_paths(unzip_dir, md),
+            case_reset(unzip_dir, md),
         ]
 
     report = {

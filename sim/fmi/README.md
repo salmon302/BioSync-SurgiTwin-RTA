@@ -99,6 +99,7 @@ The thermal model has one rate and no clocks, so the Co-Simulation interface wit
 | A2 perfusion cooling | Q_met = 0, P_abl = 0, h_bc = 0, uniform 50 C, 60 s (600 steps) | T(t) = T_a + (T0 - T_a) exp(-w_b c_b t / (rho c)), rate 0.015380 s^-1 | 0.01 K against the continuous solution. 1e-9 K against the discrete closed form (1 - rate dt)^n | Max error 3.67e-3 K against the continuous solution. Max error 3.5e-11 K against the discrete closed form. Monotone decrease. PASS |
 | B1 ablation dose | P_abl = 5 W for 0 to 30 s, then 0, h_bc = 0, default parameters, 120 s (1200 steps) | Discrete energy balance, residual against dt (P - w_b c_b V (T_mean - T_a) + Q_met V) | 1e-6 J (input about 150 J) | Residual 3.4e-10 J. V_lesion monotone, rises during power on (0 to 432 mm3 by 30 s), and stabilizes (growth over the last 20 s 0 mm3, final 480 mm3). T_mean stays at or above T_a. T_max is non-increasing after power off. PASS |
 | N1 error paths | h_bc = 1e6 W/(m2 K) and a 0.05 s step | fmi3Error at both calls | Status 3 | Both return fmi3Error with a logged reason. PASS |
+| R1 reset | 200 steps at defaults, w_b = 0, fmi3Reset, re-initialize without setting parameters, 200 steps | the second run equals the first | 0 | Exact equality (added in task 2.8 slice 1) |
 
 The numbers are copied from `SNDEV/logs/fmi-thermal-pennes-check-2026-11-05.json`, the log that `check_fmu.py` writes. The analytic error in A2 is dominated by the forward Euler discretization (about n (w dt)^2 / 2 in the exponent), which is why the 0.01 K tolerance is the continuous check and the discrete closed form is the 1e-9 K check.
 
@@ -108,7 +109,7 @@ The numbers are copied from `SNDEV/logs/fmi-thermal-pennes-check-2026-11-05.json
 * CEM43 grows steeply above 43 C. A cell at 60 C accumulates about 218 min per step, so it crosses the 240 min threshold within two steps.
 * The applicator is a uniform sphere. It does not model an electrode, an antenna, or a device-specific deposition map.
 * The parameters marked (confirm) and c_b have not been checked against the IT'IS download.
-* `fmi3Reset` is implemented but not exercised by `check_fmu.py`.
+* `fmi3Reset` is exercised by case R1 of `check_fmu.py` (added in task 2.8 slice 1). The check restores the instantiation defaults and reproduces a 200-step run exactly.
 
 ## Notes for the Mechanical (SOFA) and Physiology (Pulse) Wrappers
 

@@ -159,3 +159,17 @@ Clause verdicts on the slice-6 record: (a) parenchyma PASS (Dice 0.9077 and reca
 ### A.5 Documented variant in this change set
 
 One liver variant was run and scored once (liver v4, the envelope-convention chain: the slice-5 organ-minus-vessel subtraction is replaced by organ-envelope fill of the segmented vessel carve-outs). The variant budget was two liver variants (zero vessel variants after slice 5) and the judgment latitude in the mission was used because the slice-5 chain encodes the superseded disjoint convention and scores 0.8987 against the envelope on the same output (short 0.0013). The variant is recorded in `SNDEV/docs/impl-2026-11-05-val032-recenter.md`.
+
+## Addendum (owner ruling 2026-11-05): modality floor and slice 7
+
+Owner ruling ("Slice 7, modality floor", 2026-11-05), recorded as the authority for this addendum: the vascular floor moves from the grounded 11.0 mm to 3.0 mm, the recall and volume values are held open pending slice-7 re-grounding, and slice 7 is funded to fix the missed resolvable vessels. The G2.1 vascular clause is OPEN until the values land.
+
+Rationale recorded by the ruling: the 11.0 mm grounded floor is unsatisfactory because it excludes the missed 10.94 mm portal-trunk component, which is a resolvable vessel at this acquisition and whose zero coverage is a method gap and not a modality limit, and because it reduces the gate to aorta coverage. The floor becomes 3.0 mm grounded in partial-volume physics at the 0.78 by 0.78 by 5 mm acquisition spacing: at and above 3.0 mm a lumen cross-section spans at least four in-plane pixels and is resolvable, while below it the lumen partial-volumes into the parenchyma band (slice-6 band table: 0.2684 recall under 2 mm, 0.4254 at 2 to 3 mm).
+
+Effect on the clause (b) of Section 3:
+
+* The diameter floor is 3.0 mm (the [adjustable] marker stays).
+* The recall floor and the volume multiplier are replaced by "(values pending slice-7 grounding)" until the slice-7 re-grounding lands. The re-grounding rule is unchanged in form: the recall floor is the gated recall at the 3.0 mm floor achieved by the best bounded-volume variant (rounded down to a clean two-decimal value with a margin note) and the multiplier is the measured margin-inclusive volume as a multiple of the 40.48 mL reference (rounded up to a clean value with a margin note). If the best variant cannot approach 0.95 gated recall at bounded volume, the honest measured values are proposed and the owner re-centers.
+* G2.1's vascular clause is OPEN while the values are pending. The parenchyma clause (PASS on the slice-6 record, Dice 0.9077 and recall 0.9505 against the liver envelope) and the tumor sub-gate (not applicable, with the two-pass non-detectability evidence and the annotation search trail) are unchanged by this addendum.
+
+Slice-7 scope funded by this ruling: fix the missed resolvable vessels (targets: component 17, 5.39 mL at 10.94 mm max lumen diameter with recall 0.0; component 9, 4.38 mL at 7.81 mm with recall 0.0; component 1, 6.16 mL at 6.44 mm with recall 0.3259; and the 3 to 5 mm band, 2219 voxels at 0.5854 recall), then re-ground the recall floor and the volume multiplier at the 3.0 mm floor and apply the grounded clause text to the VTM row and the plan gate cells.

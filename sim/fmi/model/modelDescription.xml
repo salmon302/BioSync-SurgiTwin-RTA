@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<fmiModelDescription
+  fmiVersion="3.0"
+  modelName="thermal_pennes"
+  instantiationToken="5d6f2a8e-3c1b-4f7a-9e2d-7b8c0a1f4e63"
+  description="Pennes bioheat thermal ablation plant model on a 16 x 16 x 16 lattice (SurgiTwin-RTA plan task 2.7 slice 1, SRS FR-MS-007)"
+  author="Seth Nenninger"
+  version="0.1.0"
+  copyright="Copyright (c) 2026 Seth Nenninger"
+  license="MIT"
+  generationTool="SurgiTwin-RTA sim/fmi build.ps1"
+  generationDateAndTime="2026-11-05T19:00:00Z"
+  variableNamingConvention="flat">
+
+  <CoSimulation
+    modelIdentifier="thermal_pennes"
+    fixedInternalStepSize="0.1"
+    canBeInstantiatedOnlyOncePerProcess="false"
+    canGetAndSetFMUState="false"
+    canSerializeFMUState="false"
+    providesDirectionalDerivatives="false"
+    canHandleVariableCommunicationStepSize="false"
+    hasEventMode="false"/>
+
+  <UnitDefinitions>
+    <Unit name="K">
+      <BaseUnit K="1"/>
+    </Unit>
+    <Unit name="s">
+      <BaseUnit s="1"/>
+    </Unit>
+    <Unit name="m">
+      <BaseUnit m="1"/>
+    </Unit>
+    <Unit name="W">
+      <BaseUnit kg="1" m="2" s="-3"/>
+    </Unit>
+    <Unit name="W/m3">
+      <BaseUnit kg="1" m="-1" s="-3"/>
+    </Unit>
+    <Unit name="W/(m.K)">
+      <BaseUnit kg="1" m="1" s="-3" K="-1"/>
+    </Unit>
+    <Unit name="W/(m2.K)">
+      <BaseUnit kg="1" s="-3" K="-1"/>
+    </Unit>
+    <Unit name="kg/m3">
+      <BaseUnit kg="1" m="-3"/>
+    </Unit>
+    <Unit name="kg/(m3.s)">
+      <BaseUnit kg="1" m="-3" s="-1"/>
+    </Unit>
+    <Unit name="J/(kg.K)">
+      <BaseUnit m="2" s="-2" K="-1"/>
+    </Unit>
+    <Unit name="mm3">
+      <BaseUnit m="3" factor="1e-9"/>
+    </Unit>
+  </UnitDefinitions>
+
+  <LogCategories>
+    <Category name="thermal_pennes" description="Solver and parameter diagnostics"/>
+  </LogCategories>
+
+  <DefaultExperiment startTime="0.0" stopTime="120.0" stepSize="0.1"/>
+
+  <ModelVariables>
+    <Float64 name="time" valueReference="0" causality="independent" variability="continuous" unit="s" description="Simulation time"/>
+
+    <!-- Tissue and grid parameters (fixed before initialization). Sources: sim/fmi/README.md -->
+    <Float64 name="rho" valueReference="1" causality="parameter" variability="fixed" start="1078.8" unit="kg/m3" description="Liver tissue density (IT'IS, Hasgall et al. 2018, as reproduced in Vicentini et al. 2024 Table S1)"/>
+    <Float64 name="c" valueReference="2" causality="parameter" variability="fixed" start="3540.2" unit="J/(kg.K)" description="Liver tissue specific heat (IT'IS, Hasgall et al. 2018, as reproduced in Vicentini et al. 2024 Table S1)"/>
+    <Float64 name="k" valueReference="3" causality="parameter" variability="fixed" start="0.519" unit="W/(m.K)" description="Liver thermal conductivity (IT'IS, Hasgall et al. 2018, as reproduced in Vicentini et al. 2024 Table S1)"/>
+    <Float64 name="w_b" valueReference="4" causality="parameter" variability="fixed" start="16.24" unit="kg/(m3.s)" description="Liver blood perfusion rate (IT'IS, Hasgall et al. 2018, as reproduced in Vicentini et al. 2024 Table S1)"/>
+    <Float64 name="c_b" valueReference="5" causality="parameter" variability="fixed" start="3617.0" unit="J/(kg.K)" description="Blood specific heat (IT'IS, Hasgall et al. 2018; value to be confirmed against the IT'IS database download)"/>
+    <Float64 name="T_a" valueReference="6" causality="parameter" variability="fixed" start="310.15" unit="K" description="Arterial blood temperature, 37 degrees Celsius"/>
+    <Float64 name="Q_met" valueReference="7" causality="parameter" variability="fixed" start="10712.9" unit="W/m3" description="Liver metabolic heat generation (IT'IS, Hasgall et al. 2018, as reproduced in Vicentini et al. 2024 Table S1)"/>
+    <Float64 name="dx" valueReference="8" causality="parameter" variability="fixed" start="0.001" unit="m" description="Lattice spacing, cubic cells"/>
+    <Float64 name="r_app" valueReference="9" causality="parameter" variability="fixed" start="0.003" unit="m" description="Radius of the spherical ablation deposition centered on the lattice center"/>
+    <Float64 name="T_init" valueReference="10" causality="parameter" variability="fixed" start="310.15" unit="K" description="Uniform initial tissue temperature"/>
+
+    <!-- Inputs: ablation power and boundary conditions -->
+    <Float64 name="P_abl" valueReference="11" causality="input" variability="continuous" start="0.0" unit="W" description="Applicator power deposited uniformly in the ablation sphere"/>
+    <Float64 name="h_bc" valueReference="12" causality="input" variability="continuous" start="0.0" unit="W/(m2.K)" description="Convective heat transfer coefficient on all six lattice faces (0 is a zero-flux boundary)"/>
+    <Float64 name="T_env" valueReference="13" causality="input" variability="continuous" start="310.15" unit="K" description="Ambient temperature for the convective face term"/>
+
+    <!-- Outputs: temperature field summary and lesion dose -->
+    <Float64 name="T_max" valueReference="20" causality="output" variability="continuous" initial="calculated" unit="K" description="Maximum lattice temperature at the current FMU time"/>
+    <Float64 name="T_mean" valueReference="21" causality="output" variability="continuous" initial="calculated" unit="K" description="Mean lattice temperature at the current FMU time"/>
+    <Float64 name="V60" valueReference="22" causality="output" variability="continuous" initial="calculated" unit="mm3" description="Volume of cells at or above 60 degrees Celsius at the current FMU time"/>
+    <Float64 name="V_lesion" valueReference="23" causality="output" variability="continuous" initial="calculated" unit="mm3" description="Cumulative lesion volume: cells with CEM43 at or above 240 min (monotone)"/>
+  </ModelVariables>
+
+  <ModelStructure>
+    <Output valueReference="20"/>
+    <Output valueReference="21"/>
+    <Output valueReference="22"/>
+    <Output valueReference="23"/>
+    <InitialUnknown valueReference="20"/>
+    <InitialUnknown valueReference="21"/>
+    <InitialUnknown valueReference="22"/>
+    <InitialUnknown valueReference="23"/>
+  </ModelStructure>
+
+</fmiModelDescription>

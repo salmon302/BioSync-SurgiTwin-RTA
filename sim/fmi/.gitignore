@@ -1,0 +1,4 @@
+# Build output (CMake build tree, staged FMU, and the FMU archive) and Python caches.
+build/
+__pycache__/
+*.fmu

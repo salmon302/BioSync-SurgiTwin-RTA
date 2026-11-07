@@ -1,6 +1,6 @@
 # FMI 3.0 FMU Packaging for the Plant Models
 
-Status: slice 1 of plan task 2.7 (SRS FR-MS-007, VAL-028). The thermal ablation plant model is packaged as an FMI 3.0 Co-Simulation FMU and passes the unit-level import checks in `check_fmu.py`. The mechanical (SOFA) and physiology (Pulse) FMUs are not built in this slice. The co-simulation master is task 2.8 and is not in this directory yet. Gate G2.6 (clock skew and message jitter) is not measured here.
+Status: slice 1 of plan task 2.7 (SRS FR-MS-007, VAL-028). The thermal ablation plant model is packaged as an FMI 3.0 Co-Simulation FMU and passes the unit-level import checks in `check_fmu.py`. The mechanical (SOFA) FMU was added in task 2.7 slice 2 (`mechanical/`). The physiology (Pulse) FMU is not built. The co-simulation master is task 2.8 and is not in this directory yet. Gate G2.6 (clock skew and message jitter) is not measured here.
 
 ## Files
 
@@ -10,7 +10,8 @@ Status: slice 1 of plan task 2.7 (SRS FR-MS-007, VAL-028). The thermal ablation 
 * `src/fmi3_unsupported.c`: exported stubs for FMI 3.0 functions the FMU does not implement (see below).
 * `model/modelDescription.xml`: the FMI 3.0 model description (variables, units, start values, step size, defaults).
 * `include/fmi3/`: the FMI 3.0 standard C headers, pinned to the `modelica/fmi-standard` tag `v3.0.2`. Pins and hashes are in `sim/SOUP.md`.
-* `check_fmu.py`: FMPy 0.3.32 import checks. Writes `SNDEV/logs/fmi-thermal-pennes-check-2026-11-05.json`.
+* `check_fmu.py`: FMPy 0.3.32 import checks. Default `--model thermal` writes `SNDEV/logs/fmi-thermal-pennes-check-2026-11-05.json`. `--model mechanical` checks the SOFA FMU (see `mechanical/README.md`).
+* `mechanical/`: the mechanical SOFA FMU (`mechanical_sofa`, task 2.7 slice 2): C++17 proxy DLL, SofaPython3 worker, its README (variables, archive decision, cut contract boundary).
 * `requirements.txt`: exact pins for FMPy 0.3.32 and its installed dependency closure.
 
 ## Build and Check

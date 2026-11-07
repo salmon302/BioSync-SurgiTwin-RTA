@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<fmiModelDescription
+  fmiVersion="3.0"
+  modelName="mechanical_sofa"
+  instantiationToken="7c1e5a2b-94d0-4f63-b8a1-2e6d0f3c9a57"
+  description="SOFA reference organ (20 mm budget-fit mesh, 1230 tetrahedra) with a tip-to-node penalty tool coupling. One DoStep is one SOFA solver step at dt 0.001 s. Cut events are outside this FMU contract (see README)."
+  author="Seth Nenninger"
+  version="0.1.0"
+  copyright="Copyright (c) 2026 Seth Nenninger"
+  license="MIT"
+  generationTool="SurgiTwin-RTA sim/fmi build.ps1"
+  generationDateAndTime="2026-11-07T09:00:00Z"
+  variableNamingConvention="flat">
+
+  <CoSimulation
+    modelIdentifier="mechanical_sofa"
+    fixedInternalStepSize="0.001"
+    canBeInstantiatedOnlyOncePerProcess="false"
+    canGetAndSetFMUState="false"
+    canSerializeFMUState="false"
+    providesDirectionalDerivatives="false"
+    canHandleVariableCommunicationStepSize="false"
+    hasEventMode="false"/>
+
+  <UnitDefinitions>
+    <Unit name="s">
+      <BaseUnit s="1"/>
+    </Unit>
+    <Unit name="m">
+      <BaseUnit m="1"/>
+    </Unit>
+    <Unit name="N">
+      <BaseUnit kg="1" m="1" s="-2"/>
+    </Unit>
+    <Unit name="N.m">
+      <BaseUnit kg="1" m="2" s="-2"/>
+    </Unit>
+    <Unit name="N/m">
+      <BaseUnit kg="1" s="-2"/>
+    </Unit>
+    <Unit name="1">
+      <BaseUnit/>
+    </Unit>
+  </UnitDefinitions>
+
+
+  <LogCategories>
+    <Category name="mechanical_sofa" description="Worker start, pipe, and step diagnostics"/>
+  </LogCategories>
+
+  <DefaultExperiment startTime="0.0" stopTime="1.0" stepSize="0.001"/>
+
+
+
+  <ModelVariables>
+    <Float64 name="time" valueReference="0" causality="independent" variability="continuous" unit="s" description="Simulation time (FMU time)"/>
+
+    <!-- Parameter (fixed before initialization) -->
+    <Float64 name="tool_stiffness" valueReference="1" causality="parameter" variability="fixed" start="2000.0" unit="N/m" description="Penalty stiffness of the tip-to-node coupling (point spring from the tool tip to the organ coupling node)"/>
+
+    <!-- Inputs: tool-tip pose. Position drives the coupling; orientation is echoed to the pose output (no physical effect for a point coupling). -->
+    <Float64 name="tip_x" valueReference="10" causality="input" variability="continuous" start="0.1" unit="m" description="Tool-tip position x in the scene frame (scene y superior)"/>
+    <Float64 name="tip_y" valueReference="11" causality="input" variability="continuous" start="0.2" unit="m" description="Tool-tip position y in the scene frame"/>
+    <Float64 name="tip_z" valueReference="12" causality="input" variability="continuous" start="0.1" unit="m" description="Tool-tip position z in the scene frame"/>
+    <Float64 name="tip_qx" valueReference="13" causality="input" variability="continuous" start="0.0" unit="1" description="Tool-tip orientation quaternion x (unit quaternion, echoed)"/>
+    <Float64 name="tip_qy" valueReference="14" causality="input" variability="continuous" start="0.0" unit="1" description="Tool-tip orientation quaternion y (echoed)"/>
+    <Float64 name="tip_qz" valueReference="15" causality="input" variability="continuous" start="0.0" unit="1" description="Tool-tip orientation quaternion z (echoed)"/>
+    <Float64 name="tip_qw" valueReference="16" causality="input" variability="continuous" start="1.0" unit="1" description="Tool-tip orientation quaternion w (echoed)"/>
+
+    <!-- Output: tool-tip wrench, the force on the tool from the organ and the torque about the tip (zero for a point coupling) -->
+    <Float64 name="force_x" valueReference="20" causality="output" variability="continuous" initial="calculated" unit="N" description="Force on the tool, x (organ on tool)"/>
+    <Float64 name="force_y" valueReference="21" causality="output" variability="continuous" initial="calculated" unit="N" description="Force on the tool, y"/>
+    <Float64 name="force_z" valueReference="22" causality="output" variability="continuous" initial="calculated" unit="N" description="Force on the tool, z"/>
+    <Float64 name="torque_x" valueReference="23" causality="output" variability="continuous" initial="calculated" unit="N.m" description="Torque on the tool about the tip, x (zero for the point coupling)"/>
+    <Float64 name="torque_y" valueReference="24" causality="output" variability="continuous" initial="calculated" unit="N.m" description="Torque on the tool about the tip, y"/>
+    <Float64 name="torque_z" valueReference="25" causality="output" variability="continuous" initial="calculated" unit="N.m" description="Torque on the tool about the tip, z"/>
+
+    <!-- Output: tool-tip pose (the applied input pose) -->
+    <Float64 name="pose_x" valueReference="30" causality="output" variability="continuous" initial="calculated" unit="m" description="Tool-tip pose position x (applied)"/>
+    <Float64 name="pose_y" valueReference="31" causality="output" variability="continuous" initial="calculated" unit="m" description="Tool-tip pose position y (applied)"/>
+    <Float64 name="pose_z" valueReference="32" causality="output" variability="continuous" initial="calculated" unit="m" description="Tool-tip pose position z (applied)"/>
+    <Float64 name="pose_qx" valueReference="33" causality="output" variability="continuous" initial="calculated" unit="1" description="Tool-tip pose quaternion x (applied)"/>
+    <Float64 name="pose_qy" valueReference="34" causality="output" variability="continuous" initial="calculated" unit="1" description="Tool-tip pose quaternion y (applied)"/>
+    <Float64 name="pose_qz" valueReference="35" causality="output" variability="continuous" initial="calculated" unit="1" description="Tool-tip pose quaternion z (applied)"/>
+    <Float64 name="pose_qw" valueReference="36" causality="output" variability="continuous" initial="calculated" unit="1" description="Tool-tip pose quaternion w (applied)"/>
+
+    <!-- Output: deformation summary (displacement from the initial organ state; no modal reduction in this slice) -->
+    <Float64 name="max_disp" valueReference="40" causality="output" variability="continuous" initial="calculated" unit="m" description="Maximum nodal displacement magnitude over all organ nodes"/>
+    <Float64 name="mean_disp" valueReference="41" causality="output" variability="continuous" initial="calculated" unit="m" description="Mean nodal displacement magnitude over all organ nodes"/>
+    <Float64 name="tip_node_disp" valueReference="42" causality="output" variability="continuous" initial="calculated" unit="m" description="Displacement magnitude of the organ coupling node"/>
+    <Float64 name="step_count" valueReference="43" causality="output" variability="continuous" initial="calculated" unit="1" description="Completed SOFA solver steps since the last start of the worker"/>
+  </ModelVariables>
+
+  <ModelStructure>
+    <Output valueReference="20"/>
+    <Output valueReference="21"/>
+    <Output valueReference="22"/>
+    <Output valueReference="23"/>
+    <Output valueReference="24"/>
+    <Output valueReference="25"/>
+    <Output valueReference="30"/>
+    <Output valueReference="31"/>
+    <Output valueReference="32"/>
+    <Output valueReference="33"/>
+    <Output valueReference="34"/>
+    <Output valueReference="35"/>
+    <Output valueReference="36"/>
+    <Output valueReference="40"/>
+    <Output valueReference="41"/>
+    <Output valueReference="42"/>
+    <Output valueReference="43"/>
+    <InitialUnknown valueReference="20"/>
+    <InitialUnknown valueReference="21"/>
+    <InitialUnknown valueReference="22"/>
+    <InitialUnknown valueReference="23"/>
+    <InitialUnknown valueReference="24"/>
+    <InitialUnknown valueReference="25"/>
+    <InitialUnknown valueReference="30"/>
+    <InitialUnknown valueReference="31"/>
+    <InitialUnknown valueReference="32"/>
+    <InitialUnknown valueReference="33"/>
+    <InitialUnknown valueReference="34"/>
+    <InitialUnknown valueReference="35"/>
+    <InitialUnknown valueReference="36"/>
+    <InitialUnknown valueReference="40"/>
+    <InitialUnknown valueReference="41"/>
+    <InitialUnknown valueReference="42"/>
+    <InitialUnknown valueReference="43"/>
+  </ModelStructure>
+
+</fmiModelDescription>

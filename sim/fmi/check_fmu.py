@@ -639,14 +639,307 @@ def mech_case_error_paths(unzip_dir, md):
     }
 
 
+# ---------------------------------------------------------------------------
+# Pulse physiology FMU (pulse_physiology, task 2.7 slice 3). Selected with --model pulse.
+# The engine runs in the biosync-pulse container. These cases use the FMU DLL against the worker
+# on 127.0.0.1 (the container must be running with the worker and the port published, see README).
+# ---------------------------------------------------------------------------
+
+PULSE_FMU = HERE / "build" / "fmu" / "pulse_physiology.fmu"
+PULSE_STEP = 0.01
+PULSE_PORT = 5055
+PULSE_OUTPUTS = ["heart_rate", "systolic_pressure", "diastolic_pressure", "respiration_rate", "spo2",
+                 "mean_airway_pressure", "arterial_o2_partial_pressure", "engine_time", "engine_step_ms"]
+PULSE_BOUNDS = {  # physiological bounds for a resting adult (documented in the README)
+    "heart_rate": (30.0, 200.0),
+    "systolic_pressure": (60.0, 200.0),
+    "diastolic_pressure": (30.0, 130.0),
+    "respiration_rate": (4.0, 60.0),
+    "spo2": (70.0, 100.0),
+}
+PULSE_TOL_REPRO = 0.0
+PULSE_TOL_ENGINE_MATCH = 1.0e-9
+PULSE_TOL_RESET = 0.0
+PULSE_STEP_COST_STEPS = 1000
+PULSE_SIM_STEPS = 3000  # 30 s of engine time, the P1 scenario duration
+
+
+def pulse_instance(unzip_dir, md, port=PULSE_PORT):
+    fmu = Fmu(unzip_dir, md)
+    slave = fmu.slave
+    slave.instantiate(visible=False, loggingOn=False)
+    slave.enterInitializationMode(startTime=0.0, stopTime=PULSE_SIM_STEPS * PULSE_STEP)
+    fmu.set_values(["tcp_port"], [float(port)])
+    slave.exitInitializationMode()
+    return fmu
+
+
+def pulse_outputs(fmu):
+    return dict(zip(PULSE_OUTPUTS, fmu.get_values(PULSE_OUTPUTS)))
+
+
+def pulse_run(unzip_dir, md, steps, exercise_at=None, exercise_value=0.0):
+    """Runs the FMU for the given steps and returns (rows, time-stamped outputs, fmu)."""
+    fmu = pulse_instance(unzip_dir, md)
+    rows = []
+    for n in range(steps):
+        if exercise_at is not None and n == exercise_at:
+            fmu.set_values(["exercise_intensity"], [exercise_value])
+        fmu.do_step(n * PULSE_STEP, PULSE_STEP)
+        rows.append(pulse_outputs(fmu))
+    return rows, fmu
+
+
+def pulse_key(value):
+    return "nan" if value != value else repr(value)
+
+
+def pulse_case_stepped_sanity(unzip_dir, md):
+    rows, fmu = pulse_run(unzip_dir, md, PULSE_SIM_STEPS)
+    fmu.slave.terminate()
+    fmu.slave.freeInstance()
+    violations = {}
+    for name, (lo, hi) in PULSE_BOUNDS.items():
+        bad = [i for i, r in enumerate(rows) if not (lo <= r[name] <= hi)]
+        violations[name] = len(bad)
+    finite_rows = sum(1 for r in rows if all(r[k] == r[k] for k in PULSE_BOUNDS))
+    # The engine advances in internal sub-steps. Its reported time is non-decreasing, never ahead of the FMU
+    # time, and at most one engine step (0.01 s) behind it.
+    engine_times = [r["engine_time"] for r in rows]
+    engine_time_ok = all(
+        engine_times[i + 1] >= engine_times[i] for i in range(len(engine_times) - 1)
+    ) and all(
+        -1e-9 <= (i + 1) * PULSE_STEP - engine_times[i] <= PULSE_STEP + 1e-9 for i in range(len(rows))
+    )
+    final = rows[-1]
+    passed = all(v == 0 for v in violations.values()) and finite_rows == len(rows) and engine_time_ok
+    return {
+        "name": "P1_stepped_physiology_sanity",
+        "description": "resting adult (45 y, 70 kg, 175 cm, male), no actions, 30 s of engine time (3000 DoSteps); every bounded output inside its physiological band; engine time equals FMU time",
+        "steps": PULSE_SIM_STEPS,
+        "bounds": {k: list(v) for k, v in PULSE_BOUNDS.items()},
+        "out_of_bounds_samples": violations,
+        "rows_with_all_bounded_outputs_finite": finite_rows,
+        "engine_time_non_decreasing_and_within_one_step_of_fmu_time": engine_time_ok,
+        "final": {k: final[k] for k in PULSE_OUTPUTS},
+        "arterial_o2_partial_pressure_is_nan_for_all_steps": all(r["arterial_o2_partial_pressure"] != r["arterial_o2_partial_pressure"] for r in rows),
+        "pass": passed,
+    }
+
+
+def pulse_case_engine_match(unzip_dir, md):
+    """P1 part two: the FMU trajectory against the engine's own trajectory for the same scenario (direct worker)."""
+    import socket, struct, msgpack
+    rows, fmu = pulse_run(unzip_dir, md, 200)
+    fmu.slave.terminate()
+    fmu.slave.freeInstance()
+    with socket.create_connection(("127.0.0.1", PULSE_PORT), timeout=300) as sock:
+        def frame(msg):
+            payload = msgpack.packb(msg, use_bin_type=True)
+            sock.sendall(struct.pack(">I", len(payload)) + payload)
+
+        def recv():
+            def exact(n):
+                buf = b""
+                while len(buf) < n:
+                    chunk = sock.recv(n - len(buf))
+                    if not chunk:
+                        raise ConnectionError("worker closed the connection")
+                    buf += chunk
+                return buf
+            (length,) = struct.unpack(">I", exact(4))
+            return msgpack.unpackb(exact(length), raw=False)
+
+        frame({"op": "init", "patient": {"patient_id": "fmu-check", "age": 45.0, "weight_kg": 70.0,
+                                         "height_cm": 175.0, "sex": "male"}})
+        recv()
+        engine = []
+        for _ in range(200):
+            frame({"op": "step", "n": 1})
+            recv()
+            frame({"op": "pull"})
+            engine.append(recv()["values"])
+        frame({"op": "shutdown"})
+        recv()
+    names = ["heart_rate", "systolic_pressure", "diastolic_pressure", "respiration_rate", "spo2",
+             "mean_airway_pressure", "arterial_o2_partial_pressure"]
+    dev = 0.0
+    worst = None
+    for i, r in enumerate(rows):
+        for j, name in enumerate(names):
+            a = r[name]
+            # The FMU reports SpO2 in percent; the worker reports the engine fraction (0 to 1).
+            b = engine[i][j] * 100.0 if name == "spo2" else engine[i][j]
+            if a == a and b == b and abs(a - b) > dev:
+                dev = abs(a - b)
+                worst = {"step": i + 1, "output": name, "fmu": a, "worker": b}
+    passed = dev <= PULSE_TOL_ENGINE_MATCH
+    return {
+        "name": "P1b_fmu_matches_engine_trajectory",
+        "description": "200 DoSteps through the FMU against 200 direct worker steps of the same scenario (same engine code path); deviation over the finite outputs",
+        "steps": 200,
+        "tolerance": PULSE_TOL_ENGINE_MATCH,
+        "max_abs_deviation": dev,
+        "worst_sample": worst,
+        "pass": passed,
+    }
+
+
+def pulse_case_reset(unzip_dir, md):
+    rows_a, fmu = pulse_run(unzip_dir, md, 300, exercise_at=100, exercise_value=0.5)
+    fmu.slave.fmi3Reset(fmu.slave.component)
+    slave = fmu.slave
+    slave.enterInitializationMode(startTime=0.0, stopTime=PULSE_SIM_STEPS * PULSE_STEP)
+    fmu.set_values(["tcp_port"], [float(PULSE_PORT)])
+    slave.exitInitializationMode()
+    rows_b = []
+    for n in range(300):
+        if n == 100:
+            fmu.set_values(["exercise_intensity"], [0.5])
+        fmu.do_step(n * PULSE_STEP, PULSE_STEP)
+        rows_b.append(pulse_outputs(fmu))
+    slave.terminate()
+    slave.freeInstance()
+    # engine_step_ms is worker wall time (not a physiology output) and is excluded from the comparison.
+    compared = [name for name in PULSE_OUTPUTS if name != "engine_step_ms"]
+    mismatch = 0
+    for ra, rb in zip(rows_a, rows_b):
+        for name in compared:
+            if pulse_key(ra[name]) != pulse_key(rb[name]):
+                mismatch += 1
+    return {
+        "name": "P2_reset_restarts_engine_and_reproduces_run",
+        "description": "300 DoSteps with an exercise action at step 100, fmi3Reset (worker connection closed and the engine released), re-initialization, the same 300 DoSteps; bit-identical physiology outputs required (NaN compared as a token; engine_step_ms, the worker wall time, excluded)",
+        "steps_per_run": 300,
+        "compared_outputs": compared,
+        "tolerance": PULSE_TOL_RESET,
+        "mismatched_output_values": mismatch,
+        "pass": mismatch == 0,
+    }
+
+
+def pulse_malformed_frame_result(unzip_dir, md):
+    """Fake worker that answers "init" with a corrupt frame, then a valid frame whose payload is not a map."""
+    import socket
+    import struct
+    import threading
+
+    import msgpack
+
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    port = server.getsockname()[1]
+
+    def serve(payload_for_init):
+        conn, _ = server.accept()
+        try:
+            conn.recv(4096)
+            conn.sendall(payload_for_init)
+        finally:
+            conn.close()
+            server.close()
+
+    bad_length = struct.pack(">I", 1 << 30) + b"x"  # declares far more than MAX_FRAME_BYTES
+    thread = threading.Thread(target=serve, args=(bad_length,), daemon=True)
+    thread.start()
+    fmu = Fmu(unzip_dir, md)
+    fmu.slave.instantiate(visible=False, loggingOn=False)
+    fmu.slave.enterInitializationMode(startTime=0.0, stopTime=1.0)
+    fmu.set_values(["tcp_port"], [float(port)])
+    try:
+        fmu.slave.exitInitializationMode()
+        outcome = "no error"
+    except FMICallException as error:
+        outcome = str(error)
+    fmu.slave.freeInstance()
+    thread.join(timeout=5)
+    return outcome
+
+
+def pulse_case_error_paths(unzip_dir, md):
+    results = {}
+    fmu = Fmu(unzip_dir, md)
+    fmu.slave.instantiate(visible=False, loggingOn=False)
+    fmu.slave.enterInitializationMode(startTime=0.0, stopTime=1.0)
+    fmu.set_values(["tcp_port"], [1.0])  # no worker listens on port 1: connection refused
+    try:
+        fmu.slave.exitInitializationMode()
+        results["unreachable_port"] = "no error"
+    except FMICallException as error:
+        results["unreachable_port"] = str(error)
+    fmu.slave.freeInstance()
+
+    fmu = pulse_instance(unzip_dir, md)
+    fmu.set_values(["exercise_intensity"], [2.0])
+    try:
+        fmu.do_step(0.0, PULSE_STEP)
+        results["exercise_out_of_range"] = "no error"
+    except FMICallException as error:
+        results["exercise_out_of_range"] = str(error)
+    fmu.slave.terminate()
+    fmu.slave.freeInstance()
+
+    fmu = pulse_instance(unzip_dir, md)
+    try:
+        fmu.slave.fmi3DoStep(fmu.slave.component, fmi3Float64(0.0), fmi3Float64(0.02),
+                             fmi3Boolean(True), byref(fmi3Boolean()), byref(fmi3Boolean()),
+                             byref(fmi3Boolean()), byref(fmi3Float64()))
+        results["wrong_step_size"] = "no error"
+    except FMICallException as error:
+        results["wrong_step_size"] = str(error)
+    fmu.slave.terminate()
+    fmu.slave.freeInstance()
+
+    results["malformed_frame"] = pulse_malformed_frame_result(unzip_dir, md)
+
+    passed = all("status 3" in v for v in results.values())
+    return {
+        "name": "P3_error_paths_return_fmi3_error",
+        "description": "worker port with no listener (connection refused), exercise input out of range, communicationStepSize 0.02 s, and a malformed frame from a fake worker (length prefix larger than the payload, then a non-map payload)",
+        "results": results,
+        "pass": passed,
+    }
+
+
+def pulse_case_step_cost(unzip_dir, md):
+    fmu = pulse_instance(unzip_dir, md)
+    times = []
+    engine_ms = []
+    for n in range(PULSE_STEP_COST_STEPS):
+        started = time.perf_counter()
+        fmu.do_step(n * PULSE_STEP, PULSE_STEP)
+        times.append((time.perf_counter() - started) * 1000.0)
+        engine_ms.append(fmu.get_values(["engine_step_ms"])[0])
+    fmu.slave.terminate()
+    fmu.slave.freeInstance()
+    ordered = sorted(times)
+    pct = lambda p: ordered[max(1, math.ceil(p * len(ordered))) - 1]  # noqa: E731
+    return {
+        "name": "P4_step_cost_distribution",
+        "description": "wall time of fmi3DoStep (DLL, TCP, worker advance and pull), 1000 DoSteps at 0.01 s",
+        "steps": PULSE_STEP_COST_STEPS,
+        "mean_ms": sum(times) / len(times),
+        "p50_ms": pct(0.50),
+        "p95_ms": pct(0.95),
+        "p99_ms": pct(0.99),
+        "max_ms": ordered[-1],
+        "min_ms": ordered[0],
+        "worker_engine_advance_mean_ms": sum(engine_ms) / len(engine_ms),
+        "steps_over_10ms": sum(1 for t in times if t > 10.0),
+        "pass": True,
+        "step_time_series_ms": [round(t, 4) for t in times],
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=("thermal", "mechanical"), default="thermal")
+    parser.add_argument("--model", choices=("thermal", "mechanical", "pulse"), default="thermal")
     parser.add_argument("--fmu", default=None)
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     args = parser.parse_args()
     if args.fmu is None:
-        args.fmu = str(MECH_FMU if args.model == "mechanical" else DEFAULT_FMU)
+        args.fmu = str({"mechanical": MECH_FMU, "pulse": PULSE_FMU}.get(args.model, DEFAULT_FMU))
 
     fmu_path = Path(args.fmu).resolve()
     if not fmu_path.is_file():
@@ -665,7 +958,16 @@ def main():
     ) as tmp:
         unzip_dir = Path(tmp) / "unzipped"
         extract(str(fmu_path), str(unzip_dir))
-        if args.model == "mechanical":
+        if args.model == "pulse":
+            cases = []
+            for case in (pulse_case_stepped_sanity, pulse_case_engine_match, pulse_case_reset,
+                         pulse_case_error_paths, pulse_case_step_cost):
+                try:
+                    cases.append(case(unzip_dir, md))
+                except (FMICallException, OSError, ConnectionError) as error:
+                    cases.append({"name": case.__name__.replace("pulse_case_", "P_failed_"),
+                                  "error": str(error), "pass": False})
+        elif args.model == "mechanical":
             cases = [
                 mech_case_organ_setup(unzip_dir, md),
                 mech_case_static_load(unzip_dir, md),
@@ -682,7 +984,8 @@ def main():
                 case_reset(unzip_dir, md),
             ]
 
-    title = ("mechanical_sofa FMI 3.0 import checks (plan task 2.7 slice 2)" if args.model == "mechanical"
+    title = ("pulse_physiology FMI 3.0 import checks (plan task 2.7 slice 3)" if args.model == "pulse"
+             else "mechanical_sofa FMI 3.0 import checks (plan task 2.7 slice 2)" if args.model == "mechanical"
              else "thermal_pennes FMI 3.0 import checks (plan task 2.7 slice 1)")
     report = {
         "title": title,
@@ -698,7 +1001,7 @@ def main():
             "fixedInternalStepSize_s": md.coSimulation.fixedInternalStepSize,
             "variables": len(md.modelVariables),
         },
-        "solver_step_s": MECH_STEP if args.model == "mechanical" else STEP,
+        "solver_step_s": {"mechanical": MECH_STEP, "pulse": PULSE_STEP}.get(args.model, STEP),
         "wall_time_s": round(time.time() - started, 3),
         "cases": cases,
         "pass": all(case["pass"] for case in cases),

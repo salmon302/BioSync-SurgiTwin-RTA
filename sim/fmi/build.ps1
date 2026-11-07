@@ -28,10 +28,10 @@ if (-not $cmake) { throw 'cmake is not on PATH (expected C:\Program Files\CMake\
 & $cmake.Source -S $fmiDir -B $buildDir -A x64
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed with exit code $LASTEXITCODE" }
 
-& $cmake.Source --build $buildDir --config $Config --target thermal_pennes mechanical_sofa
+& $cmake.Source --build $buildDir --config $Config --target thermal_pennes mechanical_sofa pulse_physiology
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed with exit code $LASTEXITCODE" }
 
-foreach ($name in 'thermal_pennes', 'mechanical_sofa') {
+foreach ($name in 'thermal_pennes', 'mechanical_sofa', 'pulse_physiology') {
     $fmu = Join-Path $buildDir "fmu\$name.fmu"
     if (-not (Test-Path $fmu)) { throw "FMU was not produced: $fmu" }
     $size = (Get-Item $fmu).Length

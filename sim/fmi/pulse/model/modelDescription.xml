@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<fmiModelDescription
+  fmiVersion="3.0"
+  modelName="pulse_physiology"
+  instantiationToken="b3e1d7a4-5f20-4c8e-9a61-0d2f7c4e8b19"
+  description="Kitware Pulse physiology engine (REL_4_3_2, HumanAdultWholeBody) in the biosync-pulse container, driven over TCP with MessagePack frames. One DoStep is one engine step of 0.01 s. fmi3Reset restarts the worker (fresh engine)."
+  author="Seth Nenninger"
+  version="0.1.0"
+  copyright="Copyright (c) 2026 Seth Nenninger"
+  license="MIT"
+  generationTool="SurgiTwin-RTA sim/fmi build.ps1"
+  generationDateAndTime="2026-11-07T20:00:00Z"
+  variableNamingConvention="flat">
+
+  <CoSimulation
+    modelIdentifier="pulse_physiology"
+    fixedInternalStepSize="0.01"
+    canBeInstantiatedOnlyOncePerProcess="false"
+    canGetAndSetFMUState="false"
+    canSerializeFMUState="false"
+    providesDirectionalDerivatives="false"
+    canHandleVariableCommunicationStepSize="false"
+    hasEventMode="false"/>
+
+  <UnitDefinitions>
+    <Unit name="s">
+      <BaseUnit s="1"/>
+    </Unit>
+    <Unit name="1/min">
+      <BaseUnit s="-1" factor="0.016666666666666666"/>
+    </Unit>
+    <Unit name="mmHg">
+      <BaseUnit kg="1" m="-1" s="-2" factor="133.322387415"/>
+    </Unit>
+    <Unit name="cmH2O">
+      <BaseUnit kg="1" m="-1" s="-2" factor="98.0665"/>
+    </Unit>
+    <Unit name="%">
+      <BaseUnit/>
+    </Unit>
+    <Unit name="ms">
+      <BaseUnit s="1" factor="0.001"/>
+    </Unit>
+    <Unit name="a">
+      <BaseUnit s="1" factor="31557600"/>
+    </Unit>
+    <Unit name="kg">
+      <BaseUnit kg="1"/>
+    </Unit>
+    <Unit name="cm">
+      <BaseUnit m="1" factor="0.01"/>
+    </Unit>
+    <Unit name="1">
+      <BaseUnit/>
+    </Unit>
+  </UnitDefinitions>
+
+  <LogCategories>
+    <Category name="pulse_physiology" description="Worker connection, frame, and engine diagnostics"/>
+  </LogCategories>
+
+  <DefaultExperiment startTime="0.0" stopTime="60.0" stepSize="0.01"/>
+
+  <ModelVariables>
+    <Float64 name="time" valueReference="0" causality="independent" variability="continuous" unit="s" description="FMU time (engine time is 0.01 s per step)"/>
+
+    <!-- Parameters (fixed before initialization). The worker host is 127.0.0.1 in this slice. -->
+    <Float64 name="tcp_port" valueReference="2" causality="parameter" variability="fixed" start="5055" unit="1" description="TCP port of the Pulse worker in the biosync-pulse container (published to 127.0.0.1)"/>
+    <Float64 name="patient_age" valueReference="3" causality="parameter" variability="fixed" start="45" unit="a" description="Patient age (HumanAdultWholeBody, StandardMale-equivalent defaults)"/>
+    <Float64 name="patient_weight" valueReference="4" causality="parameter" variability="fixed" start="70" unit="kg" description="Patient body weight"/>
+    <Float64 name="patient_height" valueReference="5" causality="parameter" variability="fixed" start="175" unit="cm" description="Patient height"/>
+
+    <!-- Input: scenario control. Exercise intensity is applied as an engine action when it changes (0 to 1). -->
+    <Float64 name="exercise_intensity" valueReference="10" causality="input" variability="continuous" start="0.0" unit="1" description="Exercise action intensity (engine SEExercise intensity, 0 to 1). Applied at the next DoStep when it changes."/>
+
+    <!-- Outputs: physiology (engine data requests, FR-3.6.4 set). -->
+    <Float64 name="heart_rate" valueReference="20" causality="output" variability="continuous" initial="calculated" unit="1/min" description="HeartRate (engine data request)"/>
+    <Float64 name="systolic_pressure" valueReference="21" causality="output" variability="continuous" initial="calculated" unit="mmHg" description="SystolicArterialPressure"/>
+    <Float64 name="diastolic_pressure" valueReference="22" causality="output" variability="continuous" initial="calculated" unit="mmHg" description="DiastolicArterialPressure"/>
+    <Float64 name="respiration_rate" valueReference="23" causality="output" variability="continuous" initial="calculated" unit="1/min" description="RespirationRate"/>
+    <Float64 name="spo2" valueReference="24" causality="output" variability="continuous" initial="calculated" unit="%" description="OxygenSaturation converted to percent (the engine reports a 0 to 1 fraction)"/>
+    <Float64 name="mean_airway_pressure" valueReference="25" causality="output" variability="continuous" initial="calculated" unit="cmH2O" description="MeanAirwayPressure"/>
+    <Float64 name="arterial_o2_partial_pressure" valueReference="26" causality="output" variability="continuous" initial="calculated" unit="mmHg" description="ArterialOxygenPartialPressure (NaN in the REL_4_3_2 data-request set; recorded as a known limit)"/>
+    <Float64 name="engine_time" valueReference="27" causality="output" variability="continuous" initial="calculated" unit="s" description="Engine simulation time from pull_data (equals FMU time after each step)"/>
+    <Float64 name="engine_step_ms" valueReference="28" causality="output" variability="continuous" initial="calculated" unit="ms" description="Worker wall time of the last engine step (engine advance only, excludes the transport)"/>
+  </ModelVariables>
+
+  <ModelStructure>
+    <Output valueReference="20"/>
+    <Output valueReference="21"/>
+    <Output valueReference="22"/>
+    <Output valueReference="23"/>
+    <Output valueReference="24"/>
+    <Output valueReference="25"/>
+    <Output valueReference="26"/>
+    <Output valueReference="27"/>
+    <Output valueReference="28"/>
+    <InitialUnknown valueReference="20"/>
+    <InitialUnknown valueReference="21"/>
+    <InitialUnknown valueReference="22"/>
+    <InitialUnknown valueReference="23"/>
+    <InitialUnknown valueReference="24"/>
+    <InitialUnknown valueReference="25"/>
+    <InitialUnknown valueReference="26"/>
+    <InitialUnknown valueReference="27"/>
+    <InitialUnknown valueReference="28"/>
+  </ModelStructure>
+
+</fmiModelDescription>

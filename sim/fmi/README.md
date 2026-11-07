@@ -12,6 +12,7 @@ Status: slice 1 of plan task 2.7 (SRS FR-MS-007, VAL-028). The thermal ablation 
 * `include/fmi3/`: the FMI 3.0 standard C headers, pinned to the `modelica/fmi-standard` tag `v3.0.2`. Pins and hashes are in `sim/SOUP.md`.
 * `check_fmu.py`: FMPy 0.3.32 import checks. Default `--model thermal` writes `SNDEV/logs/fmi-thermal-pennes-check-2026-11-05.json`. `--model mechanical` checks the SOFA FMU (see `mechanical/README.md`).
 * `mechanical/`: the mechanical SOFA FMU (`mechanical_sofa`, task 2.7 slice 2): C++17 proxy DLL, SofaPython3 worker, its README (variables, archive decision, cut contract boundary).
+* `pulse/`: the Pulse physiology FMU (`pulse_physiology`, task 2.7 slice 3): C++17 TCP proxy with MessagePack frames, container-side worker, its README (container route, transport contract, ownership and reset rules, variables, known limits).
 * `requirements.txt`: exact pins for FMPy 0.3.32 and its installed dependency closure.
 
 ## Build and Check

@@ -91,3 +91,25 @@ srta_fmi_package_fmu(mechanical_sofa mechanical_sofa
   "${CMAKE_CURRENT_SOURCE_DIR}/mechanical/worker/mechanical_worker.py|resources/mechanical_worker.py"
   "${CMAKE_CURRENT_SOURCE_DIR}/../sofa/src/meshes/reference_organ.msh|resources/meshes/reference_organ.msh"
 )
+
+# pulse_physiology (slice 3): C++17 proxy DLL (Winsock TCP, MessagePack frames). The engine runs in the
+# biosync-pulse container; the worker script is shipped in resources/ and started inside the container.
+add_library(pulse_physiology SHARED pulse/src/pulse_physiology.cpp src/fmi3_unsupported.c)
+set_target_properties(pulse_physiology PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+  C_STANDARD 99
+  C_STANDARD_REQUIRED ON
+  PREFIX ""
+  OUTPUT_NAME "pulse_physiology"
+)
+target_include_directories(pulse_physiology PRIVATE "${SRTA_FMI_INCLUDE_DIR}")
+target_link_libraries(pulse_physiology PRIVATE ws2_32)
+if(MSVC)
+  target_compile_options(pulse_physiology PRIVATE /W4 /WX /permissive- /EHsc)
+endif()
+srta_fmi_package_fmu(pulse_physiology pulse_physiology
+  "${CMAKE_CURRENT_SOURCE_DIR}/pulse/model/modelDescription.xml"
+  "${CMAKE_CURRENT_SOURCE_DIR}/pulse/worker/pulse_worker.py|resources/pulse_worker.py"
+)

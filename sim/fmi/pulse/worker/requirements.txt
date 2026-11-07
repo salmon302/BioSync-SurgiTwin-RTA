@@ -1,0 +1,4 @@
+# Container-side packages for pulse_worker.py (task 2.7 slice 3). Installed into the biosync-pulse image
+# (Python 3.11.13) at worker start, with pip --no-cache-dir. The image has no msgpack of its own.
+# msgpack 1.2.3 is the same pin as sim/fmi/requirements.txt (host closure, FMU check tools).
+msgpack==1.2.3

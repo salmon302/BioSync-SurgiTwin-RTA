@@ -109,7 +109,25 @@ Quiet-host check before launch (2026-11-06T21:55Z, approximate): no runSofa, War
 
 Projected runtime: the 100-trial pilot took about 26 minutes on three workers (summed trial time about 4600 s). The 1000-trial gate projects to about 4.3 hours on the same three-worker pool. The owner authorized this runtime. The run is a background process.
 
-Gate run status: in progress. Launched 2026-11-06T21:55Z (approximate) as a background process: `python sim/sofa/src/run_contact_suite.py --label gate-slice2d --grid gate --workers 3 --liver liver1`. Output: `SNDEV/logs/task23-cut-gate-slice2d/` (summary and per-trial files; gitignored captures). The gate verdict and per-trial evidence for any failure are appended in the second commit (`test(sim): G2.3 1000-trial gate suite run`).
+Gate run: complete. Launched 2026-11-06T21:55Z (approximate) as a background process: `python sim/sofa/src/run_contact_suite.py --label gate-slice2d --grid gate --workers 3 --liver liver1`. Output: `SNDEV/logs/task23-cut-gate-slice2d/` (`summary.json` and per-trial files; captures are gitignored).
+
+Gate counts (1000 trials, G0001 to G1000):
+
+| Check | Pass | Fail |
+|---|---|---|
+| contact_detected | 1000 | 0 |
+| zero_tunneling | 1000 | 0 |
+| zero_missed_contacts | 1000 | 0 |
+| analytic_balance | 1000 | 0 |
+| topology_integrity | 1000 | 0 |
+| capture_schema | 1000 | 0 |
+| wrench_continuity | 1000 | 0 |
+| culling_reduction | 1000 | 0 |
+| exit_clean | 1000 | 0 |
+
+Tunneling steps: 0. Missed points: 0. Cuts: 1768 (every trial has at least one cut). Trials failing any check: 0. Largest analytic-balance residual over all contact steps: 1.7e-9 N (tolerance 1e-6 N). Topology integrity held after every cut (no failure recorded in any trial's integrity list). Wall: summed trial time 46706 s over three workers, which is about 4.3 hours of wall time, matching the projection. The earlier intermediate estimate (about 7 hours) was an error in the per-step arithmetic and is withdrawn.
+
+Released energy over the gate (per-trial sums over cuts): minimum 2.19e-6 J, median 1.76e-5 J, maximum 4.34e-4 J, total 3.60e-2 J. All values are non-negative.
 
 ### 7. Cut energy (distribution)
 
@@ -117,11 +135,11 @@ Per-trial sums of released energy over each trial's cuts, re-pilot (100 trials, 
 
 ## Gate status
 
-The re-pilot is clean (100 of 100 trials pass all nine checks), so the pre-registered gate was launched under the owner's authorization. Verdict pending (see the gate run status above).
+Verdict: PASS against the pre-registered clauses. (a) zero tunneling: 0 events in 1000 trials. (b) zero missed contacts: 0 points in 1000 trials. (c) finite wrenches under the analytic-balance rule: 1000 of 1000 trials pass. (d) topology integrity after every cut: 1768 cuts, no failure. The gate is a pass on the model and harness as specified here (Liver 1, the fixed 1000-trial grid). It is not a clinical validation. The model still has the uncited penalty constants, the cut width outside Gokgol's tested range, and the other limits listed in the README.
 
 ## Plan consolidation (not edited here)
 
-* Task 2.3 row: slice 2d adds the analytic-balance check, the Okamura Liver 1 axial law (K_perp unused), and the G_c times width trigger at the published intercept. Re-pilot 100 of 100 clean. G2.3 gate run in progress.
+* Task 2.3 row: slice 2d adds the analytic-balance check, the Okamura Liver 1 axial law (K_perp unused), and the G_c times width trigger at the published intercept. Re-pilot 100 of 100 clean. G2.3 pre-registered gate (1000 trials): pass on all four clauses (see the gate section). The plan owner decides whether G2.3 closes on this result.
 * Trigger depths: Liver 1 trigger at 2.65 mm (0 degrees) and 2.21 mm (30 degrees); Liver 2 at 8.02 mm and 7.13 mm. The Liver 2 set cannot cut at 0 degrees within the 8 mm approach. This is a consequence for any Liver 2 gate run and should be decided before a Liver 2 run.
 * Cutting criterion: G_c times width at the intercept (164 J/m^2, 1 mm, 0.164 N) is an extrapolation beyond Gokgol's tested 2 to 5 mm. Okamura 0.94 N is recorded as a cross-check (about 740 J/m^2 read linearly), not reconciled.
 * Plan items to update when consolidated: the gate verdict, the Liver 2 trigger issue, and the released-energy distribution.

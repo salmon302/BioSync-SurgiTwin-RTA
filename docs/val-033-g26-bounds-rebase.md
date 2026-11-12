@@ -95,3 +95,25 @@ Applied wording (SRS Section 5, v/traceability/vtm.md row FR-MS-007, and the pl
 Measured adherence (three-node run, 600 s, SNDEV/logs/fmi-three-node-g26-val033-pipelined-600s-2026-11-12T105252Z.json): the master ran 600,001 ticks on its 1 ms schedule with 600,001 mechanical step points and 60,001 Pulse step points. The mechanical participant executed 6,731 steps and Pulse executed 32,220. Zero reply timeouts.
 
 Reconciliation discrepancy (recorded for the owner, not resolved here). The ruling gives 6,731 steps as one per master tick at an 11 ms tick. The master did not run an 11 ms tick: the code that produced the run has a 1 ms tick (sim/fmi/master/src/three_node_master.cpp). At 11 ms, 600 s gives about 53,600 ticks, not 6,731. So the executed schedule reconciles at 6,731 of 600,001 mechanical step points (1.1 percent) and 32,220 of 60,001 Pulse step points (53.7 percent), not 6,731 of 6,731. Under the clause as ruled, adherence is not met on the measured schedule. The verdict on (c) is FAIL as measured; the owner is asked to rule whether a re-stated reconciliation (the rate ratio as the result) or a design change (the pipeline executing the mechanical step at the schedule rate) is the closure path.
+
+## Addendum 2 (owner ruling 2026-11-12): rate-ratio clause (c) and the factor marker
+
+Ruling: clause (c) is rewritten as a rate-ratio requirement: "every remote participant executes its scheduled steps with zero reply timeouts, no lost or duplicated steps, and its achieved step rate is within a factor of [FACTOR] of its scheduled rate (the rate ratio is recorded per participant; the 1 ms-grid step count is reported as information only)". The factor marker is set at 3.0 for the record. It is an owner-set marker, adjustable at application.
+
+Applied text: SRS Section 5 (FR-MS-007), v/traceability/vtm.md (row FR-MS-007), and the SRS 1.5.0 revision note (clarification 2) use the same text with [FACTOR] = 3.0.
+
+Boundary text (owner-supplied, recorded as given): "the remote mechanical step rate is limited by the loopback round trip (about 31 ms pipelined: 22.0 ms request transit, 4.5 ms FMU step, 4.2 ms reply transit); a real network or the modal-reduction follow-on improves the ratio; the single-host loopback topology and the unmeasured network latency and separate clocks remain recorded boundaries".
+
+Measured rate ratios (three-node run, 600 s, SNDEV/logs/fmi-three-node-g26-val033-pipelined-600s-2026-11-12T105252Z.json; serialized single-node baseline, 600 s, SNDEV/logs/fmi-multirate-single-node-quiet-val033-600s-2026-11-12T104127Z.json):
+
+* Mechanical: 6,731 steps executed of 600,001 step points on the 1 ms grid. Mean period 89.1 ms, achieved rate 11.2 Hz. Against the serialized single-node baseline of 83.2 Hz (49,921 steps in 600 s), the ratio is 7.4. Against the 1 kHz grid the ratio is 89. Against the 11.2 ms schedule tick (89 Hz) the ratio is 8.0. At factor 3.0 the mechanical ratio exceeds the marker.
+* Pulse: 32,220 steps executed of 60,001 step points at the 10 ms period. Mean period 18.6 ms, achieved rate 53.7 Hz against 100 Hz scheduled. Ratio 1.9, within 3.0.
+* Pipelined round-trip split (master summary): request transit 22.0 ms, FMU step 4.5 ms, reply transit 4.2 ms (sum 30.7 ms, about 31 ms).
+
+Checks that the owner ruling depends on, recorded as found:
+
+* The ruling's "3.2x slower than the 12 ms tick" does not reproduce. 89.1 ms over 12 ms is 7.4. The 89x against the 1 ms grid is correct.
+* The boundary text attributes the mechanical rate to the 31 ms loopback round trip. A 31 ms round trip with one step in flight gives about 32 Hz, but the measured mechanical rate is 11.2 Hz (mean period 89 ms, about three times the round trip). The round trip does not account for the whole mean period in this run. The attribution is recorded as supplied and is not verified here.
+* Remote steps: the master counted 38,949 round trips against 38,951 executed steps (6,731 mechanical plus 32,220 Pulse). The two-step difference is not explained by the record, so "no lost or duplicated steps" is not fully verified.
+
+Verdict under the ruling at factor 3.0: clauses (a), (b), and (d) PASS (unchanged from Addendum 1). Clause (c) FAIL: the mechanical ratio of 7.4 exceeds 3.0, and the no-lost-or-duplicated-steps check is not closed (two-step difference). G2.6 is therefore NOT MET at factor 3.0. The factor marker is the owner's; the close-out does not change it. Owner options: (1) set the factor at a value the measured ratio meets (the record needs at least 7.5), recorded as a new ruling; (2) keep 3.0 and keep G2.6 open until a remote step rate is measured under a real network or the modal-reduction follow-on.

@@ -47,13 +47,13 @@ docker compose config -q
 
 Last updated 2026-11-12. The authoritative status is `DEVELOPMENT_PLAN.md`.
 
-* Phase 2 (M&S tier) is in progress. Verification gates:
+* Phase 2 (M&S tier) is complete (closed 2026-11-12). Verification gates:
   * G2.1 Mesh ingestion: PASS with recorded boundaries (single patient, HCC_001)
   * G2.2 Solver rate: PASS with recorded boundaries (20 mm reference scene, placeholder material parameters)
   * G2.3 Contact: PASS with recorded boundaries (Liver 1 parameter set only)
   * G2.4 Wrench publish: PASS with recorded boundaries (synthetic trajectory source)
   * G2.5 Pulse worker: PASS
-  * G2.6 Co-simulation: NOT MET. Three-node run (single host, loopback) under the rebased VAL-033 clause: clauses (a), (b), and (d) PASS; clause (c) FAIL as measured, pending the owner's closure ruling.
-* Phase 3 (RTA tier) is not started. `rta/` contains stub thresholds, not clinical limits.
+  * G2.6 Co-simulation: PASS with recorded boundaries (rate-ratio clause (c) at the owner-set factor 8.0; three-node run, single host, loopback).
+* Phase 3 (RTA tier) is in progress (kickoff 2026-11-12). `rta/` contains stub thresholds, not clinical limits.
 
 Contribution logs are in `SNDEV/docs/`, which is excluded from version control.

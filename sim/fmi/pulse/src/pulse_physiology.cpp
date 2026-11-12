@@ -58,6 +58,7 @@ enum : fmi3ValueReference
   kVrArterialO2 = 26,
   kVrEngineTime = 27,
   kVrEngineMs = 28,
+  kVrArterialO2Available = 29,  // 1 when the engine returned a finite PaO2, 0 when the value is unavailable
 };
 
 enum class State { kConfig, kInitMode, kStepping, kTerminated };
@@ -324,6 +325,7 @@ struct Instance
   double spo2 = 0.0;
   double mean_airway_pressure = 0.0;
   double arterial_o2 = 0.0;
+  bool arterial_o2_available = false;
   double engine_time = 0.0;
   double engine_ms = 0.0;
 
@@ -546,6 +548,7 @@ fmi3Status fmi3Reset(fmi3Instance instance)
   inst->applied_exercise = 0.0;
   inst->heart_rate = inst->systolic = inst->diastolic = 0.0;
   inst->respiration_rate = inst->spo2 = inst->mean_airway_pressure = inst->arterial_o2 = 0.0;
+  inst->arterial_o2_available = false;
   inst->engine_time = inst->engine_ms = 0.0;
   inst->state = State::kConfig;
   inst->error.clear();
@@ -626,6 +629,7 @@ fmi3Status fmi3DoStep(fmi3Instance instance, fmi3Float64 currentCommunicationPoi
   inst->spo2 = out[4];
   inst->mean_airway_pressure = out[5];
   inst->arterial_o2 = out[6];
+  inst->arterial_o2_available = v[6].kind == Value::kReal || v[6].kind == Value::kInt;
   inst->engine_time = t;
   inst->time += communicationStepSize;
 
@@ -697,6 +701,7 @@ fmi3Status fmi3GetFloat64(fmi3Instance instance, const fmi3ValueReference valueR
       case kVrSpO2: v = inst->spo2 * 100.0; break;
       case kVrMeanAirwayPressure: v = inst->mean_airway_pressure; break;
       case kVrArterialO2: v = inst->arterial_o2; break;
+      case kVrArterialO2Available: v = inst->arterial_o2_available ? 1.0 : 0.0; break;
       case kVrEngineTime: v = inst->engine_time; break;
       case kVrEngineMs: v = inst->engine_ms; break;
       default:

@@ -649,13 +649,14 @@ PULSE_FMU = HERE / "build" / "fmu" / "pulse_physiology.fmu"
 PULSE_STEP = 0.01
 PULSE_PORT = 5055
 PULSE_OUTPUTS = ["heart_rate", "systolic_pressure", "diastolic_pressure", "respiration_rate", "spo2",
-                 "mean_airway_pressure", "arterial_o2_partial_pressure", "engine_time", "engine_step_ms"]
+                 "mean_airway_pressure", "arterial_o2_pressure", "arterial_o2_available", "engine_time", "engine_step_ms"]
 PULSE_BOUNDS = {  # physiological bounds for a resting adult (documented in the README)
     "heart_rate": (30.0, 200.0),
     "systolic_pressure": (60.0, 200.0),
     "diastolic_pressure": (30.0, 130.0),
     "respiration_rate": (4.0, 60.0),
     "spo2": (70.0, 100.0),
+    "arterial_o2_pressure": (80.0, 100.0),  # PaO2 band for a resting adult (mmHg)
 }
 PULSE_TOL_REPRO = 0.0
 PULSE_TOL_ENGINE_MATCH = 1.0e-9
@@ -694,6 +695,35 @@ def pulse_key(value):
     return "nan" if value != value else repr(value)
 
 
+def pulse_case_nan_boundary(unzip_dir, md):
+    """Regression (defect 2026-11-07): a NaN engine value must leave the worker as nil, never NaN.
+
+    Runs the worker's pull() against a fake engine that returns NaN for PaO2 (no engine needed).
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("pulse_worker_under_test", str(HERE / "pulse" / "worker" / "pulse_worker.py"))
+    worker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(worker)
+
+    class _NanEngine:
+        def pull_data(self):
+            return [0.0, 72.0, 114.2, 73.6, 12.0, 0.97, 0.0, float("nan")]
+
+    session = worker.EngineSession()
+    session.engine = _NanEngine()
+    values = session.pull()["values"]
+    nan_floats = [v for v in values if isinstance(v, float) and v != v]
+    passed = values[-1] is None and not nan_floats
+    return {
+        "name": "P5_nan_boundary_emits_nil_not_nan",
+        "description": "worker pull() against an engine returning NaN for ArterialOxygenPressure: the value must be None (MessagePack nil), and no NaN float may leave the worker",
+        "reply_values": [None if v is None else v for v in values],
+        "nan_floats_in_reply": len(nan_floats),
+        "pass": passed,
+    }
+
+
 def pulse_case_stepped_sanity(unzip_dir, md):
     rows, fmu = pulse_run(unzip_dir, md, PULSE_SIM_STEPS)
     fmu.slave.terminate()
@@ -722,7 +752,9 @@ def pulse_case_stepped_sanity(unzip_dir, md):
         "rows_with_all_bounded_outputs_finite": finite_rows,
         "engine_time_non_decreasing_and_within_one_step_of_fmu_time": engine_time_ok,
         "final": {k: final[k] for k in PULSE_OUTPUTS},
-        "arterial_o2_partial_pressure_is_nan_for_all_steps": all(r["arterial_o2_partial_pressure"] != r["arterial_o2_partial_pressure"] for r in rows),
+        "arterial_o2_pressure_available_all_steps": all(r["arterial_o2_available"] == 1.0 for r in rows),
+        "arterial_o2_pressure_mmhg_min": min(r["arterial_o2_pressure"] for r in rows),
+        "arterial_o2_pressure_mmhg_max": max(r["arterial_o2_pressure"] for r in rows),
         "pass": passed,
     }
 
@@ -762,7 +794,7 @@ def pulse_case_engine_match(unzip_dir, md):
         frame({"op": "shutdown"})
         recv()
     names = ["heart_rate", "systolic_pressure", "diastolic_pressure", "respiration_rate", "spo2",
-             "mean_airway_pressure", "arterial_o2_partial_pressure"]
+             "mean_airway_pressure", "arterial_o2_pressure"]
     dev = 0.0
     worst = None
     for i, r in enumerate(rows):
@@ -960,8 +992,8 @@ def main():
         extract(str(fmu_path), str(unzip_dir))
         if args.model == "pulse":
             cases = []
-            for case in (pulse_case_stepped_sanity, pulse_case_engine_match, pulse_case_reset,
-                         pulse_case_error_paths, pulse_case_step_cost):
+            for case in (pulse_case_nan_boundary, pulse_case_stepped_sanity, pulse_case_engine_match,
+                         pulse_case_reset, pulse_case_error_paths, pulse_case_step_cost):
                 try:
                     cases.append(case(unzip_dir, md))
                 except (FMICallException, OSError, ConnectionError) as error:

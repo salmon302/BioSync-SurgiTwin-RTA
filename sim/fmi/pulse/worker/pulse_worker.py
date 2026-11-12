@@ -27,6 +27,7 @@ Replies (field "ok"): {"ok": true, ...} on success, {"ok": false, "error": str} 
 after "init" leaves the connection open, but the FMU treats any failure as fail-closed.
 """
 
+import math
 import os
 import socket
 import struct
@@ -46,7 +47,7 @@ PHYSIOLOGY_REQUESTS = [
     "RespirationRate",
     "OxygenSaturation",
     "MeanAirwayPressure",
-    "ArterialOxygenPartialPressure",
+    "ArterialOxygenPressure",  # PaO2 (mmHg). "ArterialOxygenPartialPressure" is NaN in REL_4_3_2.
 ]
 ACTION_KINDS = ("exercise_intensity",)
 
@@ -118,8 +119,13 @@ class EngineSession:
         values = self.engine.pull_data()
         if values is None or len(values) < 2:
             raise RuntimeError("pull_data returned no physiology values")
-        return {"time_s": float(values[0]),
-                "values": [float(values[i + 1]) for i in range(len(PHYSIOLOGY_REQUESTS))]}
+        # A non-finite engine value leaves the worker as MessagePack nil (None), never as NaN.
+        # NaN is not valid JSON and must not reach persistence or the hash path.
+        out = []
+        for i in range(len(PHYSIOLOGY_REQUESTS)):
+            x = float(values[i + 1])
+            out.append(x if math.isfinite(x) else None)
+        return {"time_s": float(values[0]), "values": out}
 
     def serialize(self):
         from pulse.cdm.engine import eSerializationFormat

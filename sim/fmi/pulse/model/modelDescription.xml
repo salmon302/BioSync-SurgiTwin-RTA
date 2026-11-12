@@ -81,7 +81,8 @@
     <Float64 name="respiration_rate" valueReference="23" causality="output" variability="continuous" initial="calculated" unit="1/min" description="RespirationRate"/>
     <Float64 name="spo2" valueReference="24" causality="output" variability="continuous" initial="calculated" unit="%" description="OxygenSaturation converted to percent (the engine reports a 0 to 1 fraction)"/>
     <Float64 name="mean_airway_pressure" valueReference="25" causality="output" variability="continuous" initial="calculated" unit="cmH2O" description="MeanAirwayPressure"/>
-    <Float64 name="arterial_o2_partial_pressure" valueReference="26" causality="output" variability="continuous" initial="calculated" unit="mmHg" description="ArterialOxygenPartialPressure (NaN in the REL_4_3_2 data-request set; recorded as a known limit)"/>
+    <Float64 name="arterial_o2_pressure" valueReference="26" causality="output" variability="continuous" initial="calculated" unit="mmHg" description="Arterial oxygen pressure PaO2 from the engine request ArterialOxygenPressure (REL_4_3_2). Plain NaN is returned only when arterial_o2_available is 0."/>
+    <Float64 name="arterial_o2_available" valueReference="29" causality="output" variability="continuous" initial="calculated" unit="1" description="1 when the engine returned a finite PaO2 at this step, 0 when the value is unavailable (explicit marker; no value is invented)"/>
     <Float64 name="engine_time" valueReference="27" causality="output" variability="continuous" initial="calculated" unit="s" description="Engine simulation time from pull_data (equals FMU time after each step)"/>
     <Float64 name="engine_step_ms" valueReference="28" causality="output" variability="continuous" initial="calculated" unit="ms" description="Worker wall time of the last engine step (engine advance only, excludes the transport)"/>
   </ModelVariables>
@@ -96,6 +97,7 @@
     <Output valueReference="26"/>
     <Output valueReference="27"/>
     <Output valueReference="28"/>
+    <Output valueReference="29"/>
     <InitialUnknown valueReference="20"/>
     <InitialUnknown valueReference="21"/>
     <InitialUnknown valueReference="22"/>
@@ -105,6 +107,7 @@
     <InitialUnknown valueReference="26"/>
     <InitialUnknown valueReference="27"/>
     <InitialUnknown valueReference="28"/>
+    <InitialUnknown valueReference="29"/>
   </ModelStructure>
 
 </fmiModelDescription>

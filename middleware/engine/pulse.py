@@ -41,6 +41,7 @@ import gc
 import hashlib
 import json
 import logging
+import math
 import multiprocessing
 import os
 import threading
@@ -129,7 +130,10 @@ class SimulationMetrics:
     systemic_vascular_resistance: float = 0.0
     # SRS FR-3.6.4 required additional metrics
     mean_airway_pressure_cm_h2o: float = 0.0
-    arterial_o2_partial_pressure_mmhg: float = 95.0
+    # PaO2 from the engine request "ArterialOxygenPressure" (REL_4_3_2). The earlier request name
+    # "ArterialOxygenPartialPressure" returns NaN in this engine build (see the defect record).
+    # None means unavailable (a non-finite engine value). A NaN is never stored here.
+    arterial_o2_partial_pressure_mmhg: Optional[float] = 0.0
 
 
 @dataclass
@@ -159,7 +163,7 @@ _PULSE_DATA_REQUESTS = [
     "RespirationRate",
     "OxygenSaturation",
     "MeanAirwayPressure",
-    "ArterialOxygenPartialPressure",
+    "ArterialOxygenPressure",
 ]
 
 
@@ -180,7 +184,7 @@ def _build_data_requests():
         "RespirationRate": FrequencyUnit.Per_min,
         "OxygenSaturation": None,
         "MeanAirwayPressure": PressureUnit.cmH2O,
-        "ArterialOxygenPartialPressure": PressureUnit.mmHg,
+        "ArterialOxygenPressure": PressureUnit.mmHg,
     }
     requests = [
         SEDataRequest.create_physiology_request(name, unit=_unit_by_name.get(name))
@@ -361,10 +365,23 @@ def _shutdown_executor(executor: Executor, terminate: bool) -> None:
             proc.terminate()
 
 
+def finite_or_none(value: Any) -> Optional[float]:
+    """Return the value as a float, or None when it is missing or not finite (NaN, inf).
+
+    Used at every boundary where an engine value leaves the worker: NaN is not valid JSON and
+    must never be persisted or hashed as a number. None is the explicit unavailable value.
+    """
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return None
+    return x if math.isfinite(x) else None
+
+
 def _metrics_from_values(values: Optional[List[float]]) -> SimulationMetrics:
     """Build SimulationMetrics from the ordered worker values (SRS FR-3.6.4)."""
     if values is None:
-        return SimulationMetrics(timestamp=time.time())
+        return SimulationMetrics(timestamp=time.time(), arterial_o2_partial_pressure_mmhg=None)
     v = dict(zip(_PULSE_DATA_REQUESTS, values))
     return SimulationMetrics(
         timestamp=time.time(),
@@ -380,7 +397,7 @@ def _metrics_from_values(values: Optional[List[float]]) -> SimulationMetrics:
         stroke_volume=0.0,
         systemic_vascular_resistance=0.0,
         mean_airway_pressure_cm_h2o=v.get("MeanAirwayPressure", 0.0),
-        arterial_o2_partial_pressure_mmhg=v.get("ArterialOxygenPartialPressure", 0.0),
+        arterial_o2_partial_pressure_mmhg=finite_or_none(v.get("ArterialOxygenPressure")),
     )
 
 
@@ -610,7 +627,7 @@ class PulseWorker:
                 "RespirationRate": _m("respiratory_rate"),
                 "OxygenSaturation": _m("spo2"),
                 "MeanAirwayPressure_cmH2O": _m("mean_airway_pressure_cm_h2o"),
-                "ArterialOxygenPartialPressure_mmHg": _m("arterial_o2_partial_pressure_mmhg"),
+                "ArterialOxygenPressure_mmHg": _m("arterial_o2_partial_pressure_mmhg"),
             },
             engine_state=engine_state_b64,
             state_hash=state_hash,
@@ -924,7 +941,9 @@ class SimulationManager:
         under the compliance triggers, so each transition is written as a new row instead.
         """
         try:
-            payload = json.dumps(engine_state, sort_keys=True)
+            # allow_nan=False: a NaN or infinity raises here instead of being written as a bare token
+            # (not valid JSON) and hashed. Unavailable values are None (JSON null) by construction.
+            payload = json.dumps(engine_state, sort_keys=True, allow_nan=False)
             db = service_session(PULSE_ENGINE_ACTOR)
             try:
                 db.add(SimulationStateRecord(

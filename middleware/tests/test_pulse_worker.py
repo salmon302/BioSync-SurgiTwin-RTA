@@ -50,7 +50,9 @@ pytestmark = pytest.mark.unit
 
 PULSE_PRESENT = importlib.util.find_spec("pulse") is not None
 
-NOMINAL_VALUES = [72.0, 120.0, 80.0, 14.0, 0.98, 8.0, 95.0]
+# Nominal engine values in data-request order. The last entry is ArterialOxygenPressure (PaO2, mmHg),
+# the working REL_4_3_2 request. Measured on the resting adult (2026-11-07): 89.06 to 89.20 mmHg.
+NOMINAL_VALUES = [72.0, 120.0, 80.0, 14.0, 0.98, 8.0, 89.1]
 
 
 def _config(patient_id: str = "unit-1") -> PatientConfig:
@@ -326,13 +328,50 @@ def test_metrics_from_values_maps_required_fields():
     assert m.respiratory_rate == 14.0
     assert m.spo2 == pytest.approx(98.0)
     assert m.mean_airway_pressure_cm_h2o == 8.0
-    assert m.arterial_o2_partial_pressure_mmhg == 95.0
+    assert m.arterial_o2_partial_pressure_mmhg == pytest.approx(89.1)
 
 
 def test_metrics_from_missing_values_uses_defaults():
     m = _metrics_from_values(None)
     assert m.heart_rate == 0.0
-    assert m.arterial_o2_partial_pressure_mmhg == 95.0
+    # No engine data: PaO2 is unavailable (None), never the old 95.0 stub value.
+    assert m.arterial_o2_partial_pressure_mmhg is None
+
+
+def test_nan_pao2_is_explicit_unavailable_not_nan():
+    """Regression: a NaN engine PaO2 must not reach the metric as a number.
+
+    The defect (2026-11-07): ArterialOxygenPartialPressure returned NaN in every step, and
+    json.dumps wrote a bare NaN token into the persisted payload and its digest.
+    """
+    values = list(NOMINAL_VALUES)
+    values[6] = float("nan")
+    m = _metrics_from_values(values)
+    assert m.arterial_o2_partial_pressure_mmhg is None
+    assert pulse_mod.finite_or_none(float("nan")) is None
+    assert pulse_mod.finite_or_none(float("inf")) is None
+    assert pulse_mod.finite_or_none(89.1) == pytest.approx(89.1)
+
+
+def test_persisted_payload_with_unavailable_pao2_is_valid_json():
+    """Regression: the persisted payload and its digest never contain NaN.
+
+    _append_state encodes with allow_nan=False, so a NaN would raise. An unavailable PaO2 is
+    None, which encodes as JSON null and hashes deterministically.
+    """
+    import hashlib
+    import json
+
+    values = list(NOMINAL_VALUES)
+    values[6] = float("nan")
+    m = _metrics_from_values(values)
+    metrics = {"ArterialOxygenPressure_mmHg": m.arterial_o2_partial_pressure_mmhg}
+    payload = json.dumps({"metrics": metrics}, sort_keys=True, allow_nan=False)
+    assert "NaN" not in payload
+    assert json.loads(payload)["metrics"]["ArterialOxygenPressure_mmHg"] is None
+    assert len(hashlib.sha256(payload.encode()).hexdigest()) == 64
+    with pytest.raises(ValueError):
+        json.dumps({"x": float("nan")}, allow_nan=False)
 
 
 # -- heartbeat-gap metric ----------------------------------------------------

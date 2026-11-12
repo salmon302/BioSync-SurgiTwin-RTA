@@ -51,7 +51,7 @@ One TCP connection is one FMU instance. The worker serves one connection at a ti
 | `serialize` | none | `{ok: true, state_json}` (a JSON string of the engine state) |
 | `shutdown` | none | `{ok: true}`, then the worker releases the engine and closes the connection |
 
-Data requests, in `values` order: HeartRate, SystolicArterialPressure, DiastolicArterialPressure, RespirationRate, OxygenSaturation, MeanAirwayPressure, ArterialOxygenPartialPressure.
+Data requests, in `values` order: HeartRate, SystolicArterialPressure, DiastolicArterialPressure, RespirationRate, OxygenSaturation, MeanAirwayPressure, ArterialOxygenPressure. A non-finite value is sent as nil (MessagePack nil, JSON null).
 
 Any reply with `ok: false`, a malformed length (zero or above 8 MiB), a malformed map, a closed connection, or a receive timeout (120 s) makes the FMU return fmi3Error and log the cause.
 
@@ -82,7 +82,8 @@ The reset equivalence is checked by case P2 (below). Two engine runs of the same
 | respiration_rate | output | 1/min | calculated | RespirationRate |
 | spo2 | output | % | calculated | OxygenSaturation converted from the engine fraction to percent |
 | mean_airway_pressure | output | cmH2O | calculated | MeanAirwayPressure (0 in the default scenario) |
-| arterial_o2_partial_pressure | output | mmHg | calculated | ArterialOxygenPartialPressure (NaN in this data-request set, see known limits) |
+| arterial_o2_pressure | output | mmHg | calculated | ArterialOxygenPressure (PaO2, engine request, working in REL_4_3_2; was ArterialOxygenPartialPressure, which returns NaN) |
+| arterial_o2_available | output | 1 | calculated | 1 when the engine returned a finite PaO2 at this step, 0 when unavailable (explicit marker) |
 | engine_time | output | s | calculated | engine time reported by `pull_data` |
 | engine_step_ms | output | ms | calculated | worker wall time of the last engine advance (engine only, excludes transport) |
 
@@ -90,7 +91,7 @@ The FMU step is 0.01 s (`fixedInternalStepSize`). A DoStep with another size ret
 
 ## Mapping to the FR-MS-006 Metric Set
 
-The FR-MS-006 middleware metric set (`middleware/engine/pulse.py`, `SimulationMetrics`) is reproduced by the FMU outputs: heart_rate, blood_pressure_systolic, blood_pressure_diastolic, respiratory_rate, spo2 (percent), and mean_airway_pressure_cm_h2o. arterial_o2_partial_pressure_mmhg maps to arterial_o2_partial_pressure, which is NaN in this engine build. The middleware fields temperature, cardiac_output, stroke_volume, and systemic_vascular_resistance are not data requests in the middleware and are not outputs of this FMU. The PK/PD state of the engine is not exposed as a variable in this slice. The engine state is available through the `serialize` operation of the worker, and is not a co-simulation output.
+The FR-MS-006 middleware metric set (`middleware/engine/pulse.py`, `SimulationMetrics`) is reproduced by the FMU outputs: heart_rate, blood_pressure_systolic, blood_pressure_diastolic, respiratory_rate, spo2 (percent), and mean_airway_pressure_cm_h2o. arterial_o2_partial_pressure_mmhg maps to arterial_o2_pressure (ArterialOxygenPressure, working in REL_4_3_2). The middleware fields temperature, cardiac_output, stroke_volume, and systemic_vascular_resistance are not data requests in the middleware and are not outputs of this FMU. The PK/PD state of the engine is not exposed as a variable in this slice. The engine state is available through the `serialize` operation of the worker, and is not a co-simulation output.
 
 ## Checks (`check_fmu.py --model pulse`)
 
@@ -109,7 +110,7 @@ P4 measured the DoStep wall time over 1000 steps (see the implementation record 
 ## Known Limits
 
 * The FMU path is synchronous and blocking (each DoStep waits for the worker reply). This is acceptable for co-simulation, where the master calls each participant in turn. The FR-MS-006 non-blocking requirement applies to the middleware telemetry path, and it is not claimed for this FMU.
-* ArterialOxygenPartialPressure is NaN in every step of the REL_4_3_2 data-request set used by `middleware/engine/pulse.py`. The FMU reports the NaN and does not invent a value.
+* The engine request `ArterialOxygenPartialPressure` returns NaN in every step of the REL_4_3_2 build (defect record `SNDEV/docs/impl-2026-11-07-pulse-pao2-nan-fix.md`). The FMU and the middleware now read `ArterialOxygenPressure` (PaO2, 89.06 to 89.20 mmHg on the resting adult). A non-finite value leaves the worker as nil and the FMU reports `arterial_o2_available` = 0.
 * The Pulse engine advances in internal sub-steps. The engine time reported by `pull_data` lags the FMU time by at most one step (0.01 s) and is not exactly equal to it at every step.
 * The default scenario (no actions) keeps heart rate near 72 1/min and pressures near 114/74 mmHg. Exercise lowers the pressures sharply in three seconds of engine time (the exercise action is a scenario control, not a validated response). The P1 bounds apply to the default scenario only.
 * The worker serves one connection at a time. A second FMU instance must use a second worker (a second port and container). This is the one-engine-per-instance rule.

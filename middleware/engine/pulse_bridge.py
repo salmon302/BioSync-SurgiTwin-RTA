@@ -80,7 +80,7 @@ def _default_patient_config(patient_id: str):
     )
 
 
-def pulse_baseline(patient_id: str) -> Optional[Dict[str, float]]:
+def pulse_baseline(patient_id: str) -> Optional[Dict[str, Optional[float]]]:
     """Spin a live Pulse patient simulation, step it, return baseline physiology.
 
     Returns ``None`` when the real engine is unavailable so callers fall back to

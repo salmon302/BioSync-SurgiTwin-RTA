@@ -318,6 +318,27 @@ def test_pause_resume_stop_round_trip(stub_engine):
     assert final.patient_id == "unit-life"
 
 
+def test_serialize_before_first_step_reports_unavailable_metrics_as_none(stub_engine):
+    """Regression: with no engine data yet, every persisted metric is None, never a fake 0.0."""
+    worker = PulseWorker(_config("unit-no-metrics"), executor_factory=_thread_executor)
+    try:
+        assert worker.initialize() is True
+        assert len(worker.metrics_history) == 0
+        state = worker.serialize_state()
+        assert set(state.metrics) == {
+            "HeartRate",
+            "SystolicArterialPressure_mmHg",
+            "DiastolicArterialPressure_mmHg",
+            "RespirationRate",
+            "OxygenSaturation",
+            "MeanAirwayPressure_cmH2O",
+            "ArterialOxygenPressure_mmHg",
+        }
+        assert all(value is None for value in state.metrics.values())
+    finally:
+        worker.close()
+
+
 # -- metric mapping ----------------------------------------------------------
 
 def test_metrics_from_values_maps_required_fields():

@@ -141,7 +141,7 @@ class SerializedState:
     """Serialized simulation state for persistence (SRS FR-3.6.3)"""
     patient_id: str
     timestamp: float
-    metrics: Dict[str, float]
+    metrics: Dict[str, Optional[float]]  # None means unavailable (no engine data yet)
     engine_state: str  # GPB-serialized state as base64 string
     state_hash: str = ""  # SHA-256 of engine_state for tamper detection
     serialization_format: str = "GPB_v1_base64"  # Protocol buffer indicator
@@ -614,7 +614,7 @@ class PulseWorker:
 
         latest = self.metrics_history[-1] if self.metrics_history else None
 
-        def _m(name, default=0.0):
+        def _m(name, default=None):
             return getattr(latest, name, default) if latest else default
 
         return SerializedState(

@@ -85,3 +85,13 @@ Drafted 2026-11-12 with the owner ruling of the same date. Applied to SRS.md, th
 * Mechanical DoStep cost (check M3): `SNDEV/logs/fmi-mechanical-check-2026-11-07.json`.
 * FMU import-check suites: thermal five cases `SNDEV/logs/fmi-thermal-pennes-check-slice2-2026-11-07.json`; mechanical five cases `SNDEV/logs/fmi-mechanical-check-2026-11-07.json`; Pulse six cases `SNDEV/logs/fmi-pulse-check-pao2-fix-final-2026-11-07.json`.
 * Slice-2 log: `SNDEV/docs/impl-2026-11-11-task28-slice2-multirate.md`.
+
+## Addendum (owner ruling 2026-11-12): clause (c) clarification and measured adherence
+
+Ruling quoted: "VAL-033 clause (c) counts schedule adherence at the schedule rate: every scheduled participant step executes exactly once per its schedule period with zero timeouts, and the step-count reconciliation uses the master tick count."
+
+Applied wording (SRS Section 5, v/traceability/vtm.md row FR-MS-007, and the plan gate G2.6): "every scheduled participant step executes exactly once per its schedule period with zero reply timeouts, with the step-count reconciliation performed at the master tick rate (the schedule rate); the 1 ms-grid step count is reported as information only". The SRS revision note is recorded under the 1.5.0 row as a clarification, not a new version.
+
+Measured adherence (three-node run, 600 s, SNDEV/logs/fmi-three-node-g26-val033-pipelined-600s-2026-11-12T105252Z.json): the master ran 600,001 ticks on its 1 ms schedule with 600,001 mechanical step points and 60,001 Pulse step points. The mechanical participant executed 6,731 steps and Pulse executed 32,220. Zero reply timeouts.
+
+Reconciliation discrepancy (recorded for the owner, not resolved here). The ruling gives 6,731 steps as one per master tick at an 11 ms tick. The master did not run an 11 ms tick: the code that produced the run has a 1 ms tick (sim/fmi/master/src/three_node_master.cpp). At 11 ms, 600 s gives about 53,600 ticks, not 6,731. So the executed schedule reconciles at 6,731 of 600,001 mechanical step points (1.1 percent) and 32,220 of 60,001 Pulse step points (53.7 percent), not 6,731 of 6,731. Under the clause as ruled, adherence is not met on the measured schedule. The verdict on (c) is FAIL as measured; the owner is asked to rule whether a re-stated reconciliation (the rate ratio as the result) or a design change (the pipeline executing the mechanical step at the schedule rate) is the closure path.

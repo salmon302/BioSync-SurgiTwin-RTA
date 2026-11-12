@@ -232,7 +232,7 @@ The GitHub Actions workflow was not run during the scaffold. Its first run is pa
 
 **Goal:** Replace the stub RTA placeholders with the deterministic Simplex switch, timed automata state prediction, numeric safety envelope, and verified fallback for FR-RTA-001 through FR-RTA-004, with static analysis, WCET, and MC/DC evidence first.
 
-**Status:** Not started. Phase 1 task 1.7 (VTM with FR-RTA-003 row) is a prerequisite. No commercial license is used in development (`SNDEV/docs/impl-2026-10-14-no-commercial-licenses.md`).
+**Status:** In progress (kickoff 2026-11-12, `SNDEV/docs/impl-2026-11-12-phase3-kickoff.md`). The evidence-first ordering starts with task 3.7 slice 1 (open-source static analysis baseline over `rta/`, issue salmon302/BioSync-SurgiTwin-RTA#1), ahead of the task 3.8 coverage work. The Phase 2 open-findings register is carried into Phase 3 per the Phase 2 closing sentence in `SNDEV/docs/impl-2026-11-12-g26-closeout.md`. Phase 1 task 1.7 (VTM with FR-RTA-003 row) is a prerequisite. No commercial license is used in development (`SNDEV/docs/impl-2026-10-14-no-commercial-licenses.md`).
 
 **Estimate:** 35.0 d.
 

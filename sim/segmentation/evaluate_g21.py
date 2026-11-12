@@ -128,7 +128,9 @@ def evaluate_pair(pipe_name, ref_name):
     p_arr = sitk.GetArrayViewFromImage(p_bin).astype(bool)
     r_arr = sitk.GetArrayViewFromImage(r_bin).astype(bool)
     dice_np = dice_numpy(p_arr, r_arr)
-    jaccard_np = float(np.logical_and(p_arr, r_arr).sum() / np.logical_or(p_arr, r_arr).sum())
+    # Lint suppression: jaccard_np is computed but never compared with jaccard_sitk. Adding that check
+    # changes the pass/fail behavior, so it is a design decision (see SNDEV/docs impl-2026-11-12-wrapup-lint-mfix).
+    jaccard_np = float(np.logical_and(p_arr, r_arr).sum() / np.logical_or(p_arr, r_arr).sum())  # noqa: F841
     inter = int(np.logical_and(p_arr, r_arr).sum())
     recall = float(inter / r_arr.sum()) if r_arr.sum() else 1.0
     if abs(dice_np - dice_sitk) > 1e-6:

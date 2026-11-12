@@ -3,6 +3,6 @@
 pytest==8.3.4
 # Starlette TestClient transport
 httpx==0.28.1
-# Lint (ruff) and type check (mypy). Pinned only: not installed or run in this environment.
+# Lint (ruff) and type check (mypy) for sim/. Run by the sim-lint CI job; config is sim/pyproject.toml.
 ruff==0.8.4
 mypy==1.13.0

@@ -1,0 +1,26 @@
+# Lint and type-check configuration for Python sources under sim/.
+# Tool versions are pinned in middleware/requirements-test.txt (ruff 0.8.4, mypy 1.13.0).
+# CI job: sim-lint in .github/workflows/ci.yml. Rule set and rationale: SNDEV/docs/impl-2026-11-12-wrapup-lint-mfix.md.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+# sim/fmi/ is excluded while an active builder owns it. Remove this entry when that work lands.
+extend-exclude = ["fmi"]
+
+[tool.ruff.lint]
+# Blocking set. A finding in any of these rules fails the sim-lint job.
+#   E4 import errors, E7 statement errors (bare except, ambiguous names), E9 syntax and runtime errors,
+#   F pyflakes (unused names and imports, undefined names), B bugbear.
+# Style rules (E501, W, UP, I, BLE) are reported as advisory and do not fail the job.
+select = ["E4", "E7", "E9", "F", "B"]
+# B905 (zip without strict=) is excluded. Adding strict=True raises on length mismatch, which changes
+# behavior in the sim tools. Revisit per call site when a length invariant is confirmed.
+ignore = ["B905"]
+
+[tool.mypy]
+python_version = "3.11"
+# SimpleITK, slicer, SOFA, and FMI bindings are not installed in the lint environment.
+ignore_missing_imports = true
+# Unannotated function bodies are not checked. Enabling this is a separate decision.
+check_untyped_defs = false

@@ -467,7 +467,7 @@ def chain_vessel_v1(hu, sm, acq_by_slice, spacing, liver, variant):
         cc = sitk.GetArrayFromImage(cc_img)
         stats = sitk.LabelShapeStatisticsImageFilter()
         stats.Execute(cc_img)
-        big = [int(l) for l in stats.GetLabels() if stats.GetPhysicalSize(l) / float(np.prod(spacing)) >= SPINE_FILL_MIN_VOXELS]
+        big = [int(label) for label in stats.GetLabels() if stats.GetPhysicalSize(label) / float(np.prod(spacing)) >= SPINE_FILL_MIN_VOXELS]
         for lbl in big:
             spine = np.maximum(spine, sitk_fill_holes((cc == lbl).astype(np.uint8)))
         spine_excl = sitk_dilate(spine, BONE_MARGIN_MM, spacing)
@@ -840,7 +840,9 @@ def main():
         "slicer_version": slicer.app.applicationVersion,
         "slicer_revision": slicer.app.repositoryRevision,
     }
-    sitk_version = sitk.Version().VersionString()
+    # Lint suppression: sitk_version is read but not recorded in operator. Recording it changes the
+    # output metadata, so it is a design decision (see SNDEV/docs impl-2026-11-12-wrapup-lint-mfix).
+    sitk_version = sitk.Version().VersionString()  # noqa: F841
 
     with DICOMUtils.TemporaryDICOMDatabase() as db:
         DICOMUtils.importDicom(dicom_dir, db)

@@ -15,6 +15,20 @@ jobs:
       - run: python -m pip install -r middleware/requirements-test.txt
       - run: python -m pytest middleware/tests vv/tests -q
 
+  sim-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -r middleware/requirements-test.txt
+      # Blocking gate. Rule set and suppressions are in sim/pyproject.toml.
+      - run: python -m ruff check sim
+      # Advisory style report. Findings here do not fail the job.
+      - run: python -m ruff check sim --select E,W,UP,I,BLE --exit-zero --statistics
+      - run: python -m mypy --config-file sim/pyproject.toml sim/sofa/src sim/bridge/tools sim/segmentation
+
   qualification:
     runs-on: ubuntu-latest
     services:

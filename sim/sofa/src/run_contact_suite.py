@@ -52,6 +52,7 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[2]
@@ -112,7 +113,7 @@ OKAMURA_LIVER_SETS = {
 }
 
 # Calibrated and placeholder constants. Sources and status are in sim/sofa/README.md.
-CALIBRATION = {
+CALIBRATION: dict[str, Any] = {
     "puncture_liver_set": "liver1",
     "puncture_k_perp_unused": 430.0,
     "puncture_anisotropy": 2.0,
@@ -386,7 +387,9 @@ def check_trial(trial, result, out_dir):
 
     cut_ticks = [c["cut_tick"] for c in result["cuts"]]
     cut_integrity_ok = all(c["integrity_ok"] for c in result["cuts"]) and not result["integrity_failures"]
-    crossed_ok = all(c["crossed_tetrahedra"] > 0 for c in result["cuts"])
+    # Lint suppression: crossed_ok is computed but not yet wired into failures. Wiring it changes
+    # the verdict, so that is a design decision for the owner (see SNDEV/docs impl-2026-11-12-wrapup-lint-mfix).
+    crossed_ok = all(c["crossed_tetrahedra"] > 0 for c in result["cuts"])  # noqa: F841
     continuity_ok = all(
         (t + 1) < len(bridge_rows) and np.isfinite(wrench[t]).all() and np.isfinite(wrench[t + 1]).all()
         for t in cut_ticks)

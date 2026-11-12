@@ -1,0 +1,59 @@
+{
+  "scope": "DEVELOPMENT_PLAN.md task 3.7: the pinned open-source static analysis check set for rta/ (gate G3.1 context, VAL-016). Development uses no commercial tool (decision of 2026-10-14).",
+  "pinnedOn": "2026-11-12",
+  "cppStandard": "c++17",
+  "tools": {
+    "cppcheck": {
+      "version": "2.22.0",
+      "pathEnvVar": "CPPCHECK_EXE",
+      "windows": {
+        "path": "C:\\Users\\salmo\\tools\\cppcheck-2.22.0\\PFiles\\Cppcheck\\cppcheck.exe",
+        "url": "https://github.com/cppcheck-opensource/cppcheck/releases/download/2.22.0/cppcheck-2.22.0-x64-Setup.msi",
+        "sha256": "3929162bab7e71d1b9b18708ec054fb0188bfc8ea1660979ed95837f5a9f547b",
+        "origin": "Official x64 installer applied with msiexec /a (administrative extract to a user path; no elevation and no PATH change)."
+      },
+      "linux": {
+        "repo": "https://github.com/danmar/cppcheck.git",
+        "tag": "2.22.0",
+        "commit": "a436ca35ed1887bee789765122b65ed2d7a7e045",
+        "origin": "CI builds the CLI from the pinned tag and asserts the pinned commit before building."
+      }
+    },
+    "clang-tidy": {
+      "version": "19.1.5",
+      "pathEnvVar": "CLANG_TIDY_EXE",
+      "windows": {
+        "path": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\Llvm\\bin\\clang-tidy.exe",
+        "origin": "LLVM 19.1.5 from the Visual Studio 2022 Community VC Tools LLVM component."
+      },
+      "linux": {
+        "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.5/LLVM-19.1.5-Linux-X64.tar.xz",
+        "sha256": "13e9975b026d431c945927960e5f8c0a47a155a2f605f75e85f4d1482620c65f",
+        "origin": "Official LLVM 19.1.5 release binary; the sha256 is the SLSA provenance subject digest of the release asset .jsonl sidecar."
+      }
+    }
+  },
+  "checks": {
+    "target": "rta",
+    "cppcheckArgs": [
+      "--std=c++17",
+      "--enable=warning,style,performance,portability"
+    ],
+    "clangTidyConfig": "vv/static-analysis/.clang-tidy",
+    "clangTidyCompilerArgs": [
+      "-std=c++17",
+      "-Irta/include"
+    ],
+    "findingMetrics": {
+      "cppcheck": "count of <error> elements in the cppcheck XML report (xml version 2)",
+      "clang-tidy": "count of \": warning: \" diagnostics across the combined standard output and standard error of one clang-tidy invocation over all translation units"
+    }
+  },
+  "acceptedFindings": {
+    "cppcheck": 0,
+    "clang-tidy": 2
+  },
+  "baselineRecord": "SNDEV/docs/impl-2026-11-12-task37-slice1-static-analysis-baseline.md",
+  "deviationRegister": "vv/traceability/deviation-register.md",
+  "defaultReportDir": "SNDEV/logs/static-analysis-baseline-2026-11-12"
+}

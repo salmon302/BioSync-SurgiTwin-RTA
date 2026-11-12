@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: MIT
+# Pinned clang-tidy check set for DEVELOPMENT_PLAN.md task 3.7 (rta/, C++17 pin).
+# Selected checks: bugprone, clang-analyzer, concurrency, performance, and portability families.
+# Run by vv/static-analysis/run.ps1 with --config-file; the accepted baseline finding
+# counts live in vv/static-analysis/pins.json and the deviations in vv/traceability/deviation-register.md.
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  concurrency-*,
+  performance-*,
+  portability-*
+WarningsAsErrors: ''
+HeaderFilterRegex: 'rta[\\/]include'
+FormatStyle: none

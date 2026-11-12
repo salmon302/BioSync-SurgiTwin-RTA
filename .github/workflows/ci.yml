@@ -66,3 +66,43 @@ jobs:
       - run: cmake -S . -B build
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
+
+  # Blocking gate (task 3.7). Exact tool versions and hashes come from
+  # vv/static-analysis/pins.json; no floating installs. The runner exits nonzero
+  # when findings exceed the accepted set in pins.json.
+  static-analysis:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache the pinned clang-tidy 19.1.5
+        uses: actions/cache@v4
+        with:
+          path: ~/llvm-19.1.5
+          key: llvm-19.1.5-linux-x64-13e9975b
+      - name: Install pinned clang-tidy 19.1.5
+        run: |
+          set -euo pipefail
+          tidy="$(find "$HOME/llvm-19.1.5" -maxdepth 4 -type f -name clang-tidy 2>/dev/null | head -n 1 || true)"
+          if [ -z "$tidy" ]; then
+            curl -L --fail -o /tmp/llvm-19.1.5.tar.xz "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.5/LLVM-19.1.5-Linux-X64.tar.xz"
+            echo "13e9975b026d431c945927960e5f8c0a47a155a2f605f75e85f4d1482620c65f  /tmp/llvm-19.1.5.tar.xz" | sha256sum -c -
+            mkdir -p "$HOME/llvm-19.1.5"
+            tar -xJf /tmp/llvm-19.1.5.tar.xz -C "$HOME/llvm-19.1.5"
+            tidy="$(find "$HOME/llvm-19.1.5" -maxdepth 4 -type f -name clang-tidy | head -n 1)"
+          fi
+          echo "CLANG_TIDY_EXE=$tidy" >> "$GITHUB_ENV"
+      - name: Build pinned cppcheck 2.22.0
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 2.22.0 https://github.com/danmar/cppcheck.git "$RUNNER_TEMP/cppcheck-src"
+          test "$(git -C "$RUNNER_TEMP/cppcheck-src" rev-parse HEAD)" = "a436ca35ed1887bee789765122b65ed2d7a7e045"
+          make -C "$RUNNER_TEMP/cppcheck-src" -j"$(nproc)"
+          echo "CPPCHECK_EXE=$RUNNER_TEMP/cppcheck-src/cppcheck" >> "$GITHUB_ENV"
+      - name: Run the pinned check set on rta/
+        run: pwsh -File vv/static-analysis/run.ps1
+      - name: Upload the static analysis reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-analysis-rta
+          path: SNDEV/logs/static-analysis-baseline-2026-11-12/

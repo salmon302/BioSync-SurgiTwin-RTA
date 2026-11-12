@@ -53,7 +53,7 @@ Last updated 2026-11-12. The authoritative status is `DEVELOPMENT_PLAN.md`.
   * G2.3 Contact: PASS with recorded boundaries (Liver 1 parameter set only)
   * G2.4 Wrench publish: PASS with recorded boundaries (synthetic trajectory source)
   * G2.5 Pulse worker: PASS
-  * G2.6 Co-simulation: OPEN. The three-node run under the rebased VAL-033 clause is pending.
+  * G2.6 Co-simulation: NOT MET. Three-node run (single host, loopback) under the rebased VAL-033 clause: clauses (a), (b), and (d) PASS; clause (c) FAIL as measured, pending the owner's closure ruling.
 * Phase 3 (RTA tier) is not started. `rta/` contains stub thresholds, not clinical limits.
 
 Contribution logs are in `SNDEV/docs/`, which is excluded from version control.

@@ -117,3 +117,25 @@ Checks that the owner ruling depends on, recorded as found:
 * Remote steps: the master counted 38,949 round trips against 38,951 executed steps (6,731 mechanical plus 32,220 Pulse). The two-step difference is not explained by the record, so "no lost or duplicated steps" is not fully verified.
 
 Verdict under the ruling at factor 3.0: clauses (a), (b), and (d) PASS (unchanged from Addendum 1). Clause (c) FAIL: the mechanical ratio of 7.4 exceeds 3.0, and the no-lost-or-duplicated-steps check is not closed (two-step difference). G2.6 is therefore NOT MET at factor 3.0. The factor marker is the owner's; the close-out does not change it. Owner options: (1) set the factor at a value the measured ratio meets (the record needs at least 7.5), recorded as a new ruling; (2) keep 3.0 and keep G2.6 open until a remote step rate is measured under a real network or the modal-reduction follow-on.
+
+## Addendum 3 (owner ruling 2026-11-12): factor 8.0 and the open boundaries
+
+Ruling: the rate-ratio factor of clause (c) is 8.0. It is owner-set and adjustable at application, and it is a clean ceiling above the measured mechanical ratio. It supersedes the factor 3.0 marker of Addendum 2.
+
+Applied text: SRS Section 5 (FR-MS-007), v/traceability/vtm.md (row FR-MS-007), and the SRS 1.5.0 revision note (clarification 2) read "within a factor of 8.0 of its scheduled rate (owner-set 2026-11-12, adjustable; the rate ratio is recorded per participant; the 1 ms-grid step count is reported as information only)".
+
+Measured ratios against the 8.0 factor (three-node run, 600 s, SNDEV/logs/fmi-three-node-g26-val033-pipelined-600s-2026-11-12T105252Z.json):
+
+* Mechanical: 7.4 against the 83.2 Hz serialized single-node baseline (11.2 Hz pipelined). Within 8.0, with a margin of 0.6. Against the 11.2 ms schedule tick the ratio is 8.0 (7.96), at the edge of the factor. PASS.
+* Pulse: 1.9 (53.7 Hz against 100 Hz scheduled). Within 8.0. PASS.
+* Zero reply timeouts (master summary).
+
+Clause (c) is PASS at factor 8.0 with the two open items below recorded as boundaries.
+
+Open item 1, unattributed rate cost (open mechanism item). The mechanical mean period is 89.1 ms. The pipelined round trip is about 31 ms (22.0 ms request transit, 4.5 ms FMU step, 4.2 ms reply transit). With one step in flight, a 31 ms round trip predicts about 32 Hz, but the measured rate is 11.2 Hz. The round trip does not explain the period, so about 58 ms of the period is an unattributed cost. The mechanism is not identified. The owner's boundary text attributes the rate to the round trip; that attribution is recorded as given and is not supported by the measurement. Closure needs a measurement of the cost outside the round trip.
+
+Open item 2, round-trip count discrepancy. The master counted 38,949 remote round trips against 38,951 executed steps (6,731 mechanical plus 32,220 Pulse). The two-step difference is not explained by the record. The no-lost-or-duplicated-steps check is therefore not fully closed. The owner accepted this as a recorded boundary.
+
+Boundaries that remain recorded: single-host loopback topology (three nodes on one machine); network latency and separate clocks are not measured; the multi-host case is unmeasured. The improvement path is a real network or the modal-reduction follow-on, neither of which is measured here.
+
+Verdict: G2.6 PASS with recorded boundaries under the VAL-033 schedule-rate clause, with clause (c) at the owner-set factor 8.0. Clauses (a), (b), and (d) PASS (Addendum 1 numbers unchanged).

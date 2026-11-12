@@ -22,6 +22,7 @@
 #include "srtra_fmi_master/msg/participant_state.hpp"
 #include "srtra_fmi_master/msg/step_reply.hpp"
 #include "srtra_fmi_master/msg/step_request.hpp"
+#include "srtra_fmi_master/pipelined_exchange.hpp"
 
 namespace
 {
@@ -69,6 +70,9 @@ int main(int argc, char ** argv)
   const std::string fmu_root = node->declare_parameter<std::string>("fmu_root", "");
   const std::int64_t duration_s = node->declare_parameter<std::int64_t>("duration_s", 600);
   const std::int64_t reply_timeout_ms = node->declare_parameter<std::int64_t>("reply_timeout_ms", 5000);
+  // 1 = pipelined remote steps (VAL-033 slice 3); 0 = serialized remote steps (slice 2 attempt 1, kept for comparison).
+  const std::int64_t pipelined_flag = node->declare_parameter<std::int64_t>("pipelined", 1);
+  const bool pipelined = pipelined_flag != 0;
 
   if (fmu_root.empty() || duration_s <= 0) {
     std::fprintf(stderr, "fmi_three_node_master: fmu_root and a positive duration_s are required\n");
@@ -178,6 +182,13 @@ int main(int argc, char ** argv)
   srtra_fmi_master::msg::MasterClock clock_msg;
   srtra_fmi_master::msg::StepRequest req;
   std::uint64_t reply_timeouts = 0;
+  std::uint64_t late_replies = 0;
+  // Pipelined exchange state: one per remote participant (period 1 tick for mechanical, 10 for Pulse), the master
+  // tick at which each step was requested, and the send stamp of each step.
+  srtra_fmi_master::PipelinedExchange mech_ex(1);
+  srtra_fmi_master::PipelinedExchange pulse_ex(10);
+  std::map<std::string, std::map<std::uint64_t, std::uint64_t>> step_index_tick;
+  std::map<std::string, std::map<std::uint64_t, std::int64_t>> step_sent_ns;
   std::uint64_t late_ticks = 0;
   Ns max_lateness_ns = 0;
   std::uint64_t remote_round_trips = 0;
@@ -199,13 +210,80 @@ int main(int argc, char ** argv)
     }
     waiter.wait_until(target);
 
-    // Remote step points due at this tick: request, then wait for the matching reply (zero-order hold of the
-    // exchanged values is not needed in this slice: the remote FMUs take no wired inputs).
+    // Remote step points due at this tick.
     const bool mech_due = (tick_ns % kMechanicalNs) == 0;
     const bool pulse_due = (tick_ns % kPulseNs) == 0;
     std::vector<std::pair<std::string, Ns>> due;
     if (mech_due) due.push_back({"mechanical_sofa", kMechanicalNs});
     if (pulse_due) due.push_back({"pulse_physiology", kPulseNs});
+
+    if (pipelined) {
+      // Deliver any replies that arrived since the last tick. The subscription callback fills the reply map, so the
+      // node must spin here (a non-blocking spin, not a wait).
+      rclcpp::spin_some(node);
+      // Pipelined (VAL-033 slice 3): at each step point, read the reply of the step in flight if it has arrived
+      // (never wait), then request the next step. The reply of step s is read at the next step point after its
+      // request, so the held value is one period stale (zero-order hold, see PipelinedExchange).
+      for (const auto & d : due) {
+        auto & ex = d.first == "mechanical_sofa" ? mech_ex : pulse_ex;
+        if (ex.in_flight() >= 0) {
+          auto by_participant = replies.find(d.first);
+          const std::uint64_t step_index = static_cast<std::uint64_t>(ex.in_flight());
+          if (by_participant != replies.end() && by_participant->second.count(step_index_tick[d.first][step_index])) {
+            const auto & rep = by_participant->second[step_index_tick[d.first][step_index]];
+            ex.receive_reply(step_index, rep.output_0);
+            const double req_transit_ms = (static_cast<double>(rep.request_received_steady_ns) -
+              static_cast<double>(step_sent_ns[d.first][step_index])) / 1.0e6;
+            const double step_ms = (static_cast<double>(rep.step_done_steady_ns) -
+              static_cast<double>(rep.request_received_steady_ns)) / 1.0e6;
+            const double reply_transit_ms = (static_cast<double>(steady_now_ns()) -
+              static_cast<double>(rep.step_done_steady_ns)) / 1.0e6;
+            split_request_sum_ms += req_transit_ms;
+            split_step_sum_ms += step_ms;
+            split_reply_sum_ms += reply_transit_ms;
+            ++split_count;
+            ++remote_round_trips;
+          } else {
+            // The reply of the step in flight has not arrived. The step point is still due, so the master counts
+            // this as a late reply and holds the previous value. It does not block.
+            ++late_replies;
+            const double age_ms = (static_cast<double>(steady_now_ns()) -
+              static_cast<double>(step_sent_ns[d.first][step_index])) / 1.0e6;
+            if (age_ms > static_cast<double>(reply_timeout_ms)) {
+              ++reply_timeouts;
+              failure = "reply timeout from " + d.first + " for step " + std::to_string(step_index);
+              exit_code = 3;
+              break;
+            }
+            continue;
+          }
+        }
+        // Request the next step of this participant (the due step point).
+        const std::uint64_t step_index = ex.requests_sent();
+        if (!ex.request_sent(k)) {
+          continue;
+        }
+        step_index_tick[d.first][step_index] = k;
+        const std::int64_t sent_ns = steady_now_ns();
+        step_sent_ns[d.first][step_index] = sent_ns;
+        req = srtra_fmi_master::msg::StepRequest();
+        req.tick = k;
+        // The request time is the participant's own next step time (step index times step size), not the tick at
+        // which the request is sent. A pipelined reply arrives after the step's duration, so the send tick runs ahead
+        // of the FMU time; the participant must receive the FMU time it is due to step (see slice-3a diagnosis).
+        req.master_time_ns = step_index * static_cast<std::uint64_t>(d.second);
+        req.step_ns = static_cast<std::uint64_t>(d.second);
+        req.participant = d.first;
+        req.stimulus_value = 0.0;
+        set_stamp(req.header.stamp, sent_ns);
+        req.header.frame_id = "srtra_master";
+        request_pub->publish(req);
+      }
+      if (exit_code != 0) {
+        break;
+      }
+    } else {
+    // Serialized mode (slice 2, kept for comparison): request, then wait inside the tick for the matching reply.
     for (const auto & d : due) {
       req = srtra_fmi_master::msg::StepRequest();
       req.tick = k;
@@ -259,6 +337,7 @@ int main(int argc, char ** argv)
     if (exit_code != 0) {
       break;
     }
+    }  // end serialized mode
 
     status = scheduler->advance_to(tick_ns);
     if (!status.ok()) {
@@ -313,13 +392,14 @@ int main(int argc, char ** argv)
     "{\"schema\":\"srtra-fmi-three-node-run/1\",\"exit_code\":%d,\"failure\":\"%s\","
     "\"ticks_run\":%llu,\"wall_duration_s\":%lld,\"late_ticks_over_1ms\":%llu,\"max_lateness_ns\":%lld,"
     "\"thermal_steps\":%llu,\"remote_round_trips\":%llu,\"remote_wait_mean_ms\":%.6f,\"remote_wait_max_ms\":%.6f,"
-    "\"reply_timeouts\":%llu,\"split_request_transit_mean_ms\":%.6f,\"split_fmu_step_mean_ms\":%.6f,"
+    "\"reply_timeouts\":%llu,\"late_replies\":%llu,\"pipelined\":%s,\"split_request_transit_mean_ms\":%.6f,\"split_fmu_step_mean_ms\":%.6f,"
     "\"split_reply_transit_mean_ms\":%.6f,\"anchor_system_ns\":%lld,\"anchor_steady_ns\":%lld}\n",
     exit_code, failure.c_str(), static_cast<unsigned long long>(k), static_cast<long long>(duration_s),
     static_cast<unsigned long long>(late_ticks), static_cast<long long>(max_lateness_ns),
     static_cast<unsigned long long>(scheduler->step_count(0)),
     static_cast<unsigned long long>(remote_round_trips), remote_mean_ms, remote_wait_ms_max,
     static_cast<unsigned long long>(reply_timeouts),
+    static_cast<unsigned long long>(late_replies), pipelined ? "true" : "false",
     split_count > 0 ? split_request_sum_ms / static_cast<double>(split_count) : 0.0,
     split_count > 0 ? split_step_sum_ms / static_cast<double>(split_count) : 0.0,
     split_count > 0 ? split_reply_sum_ms / static_cast<double>(split_count) : 0.0,

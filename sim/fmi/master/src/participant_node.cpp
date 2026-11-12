@@ -16,6 +16,11 @@
 #include "srtra_fmi_master/msg/step_reply.hpp"
 #include "srtra_fmi_master/msg/step_request.hpp"
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
 namespace
 {
 
@@ -91,6 +96,8 @@ int main(int argc, char ** argv)
   const auto wall_end = SteadyClock::now() + std::chrono::seconds(duration_s + 60);
 
   auto request_sub = node->create_subscription<srtra_fmi_master::msg::StepRequest>(
+    // A request the master waits for must not be dropped, so the queue keeps every request (the master keeps at most
+    // one step in flight per participant, so the queue holds at most one request at a time).
     "/srtra/fmi/step_request", rclcpp::QoS(rclcpp::KeepLast(2000)).reliable(),
     [&](srtra_fmi_master::msg::StepRequest::SharedPtr req) {
       if (req->participant != model || exit_code != 0) {
@@ -101,11 +108,20 @@ int main(int argc, char ** argv)
       const double t_s = static_cast<double>(req->master_time_ns) / 1.0e9;
       const double h_s = static_cast<double>(req->step_ns) / 1.0e9;
       if (!fmu->do_step(t_s, h_s)) {
-        std::fprintf(stderr, "fmi_participant_node: %s step failed: %s\n", model.c_str(), fmu->last_error());
+        std::fprintf(stderr, "fmi_participant_node: %s step failed at request tick %llu (time %.9f s, step %.9f s): %s\n",
+          model.c_str(), static_cast<unsigned long long>(req->tick), t_s, h_s, fmu->last_error());
         exit_code = 2;
         return;
       }
       ++steps;
+      char trace_env[4] = {0, 0, 0, 0};
+      GetEnvironmentVariableA("SRTA_PARTICIPANT_TRACE", trace_env, sizeof(trace_env));
+      if (trace_env[0] == '1') {
+        double fmu_time = -1.0;
+        fmu->get_real(0, fmu_time);
+        std::fprintf(stderr, "trace request tick=%llu request_time=%.9f fmu_time_after_step=%.9f step_no=%llu\n",
+          static_cast<unsigned long long>(req->tick), t_s, fmu_time, static_cast<unsigned long long>(steps));
+      }
       double out[3] = {0.0, 0.0, 0.0};
       for (int k = 0; k < 3; ++k) {
         if (k < static_cast<int>(output_refs.size()) && !fmu->get_real(output_refs[k], out[k])) {

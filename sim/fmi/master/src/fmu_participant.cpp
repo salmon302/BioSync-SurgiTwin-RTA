@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -132,12 +133,18 @@ std::unique_ptr<FmuParticipant> FmuParticipant::create(
   impl->get_float64 = reinterpret_cast<fmi3GetFloat64TYPE *>(getf);
   impl->do_step = reinterpret_cast<fmi3DoStepTYPE *>(step);
 
+  // SRTA_FMU_LOGGING=1 turns on the FMU's own diagnostics (sent to stderr through log_fmu_message). Off by default.
+  // The diagnosis of the slice-3a status 3 needs the FMU's reason, which the wrapper otherwise discards.
+  char logging_env[4] = {0, 0, 0, 0};
+  GetEnvironmentVariableA("SRTA_FMU_LOGGING", logging_env, sizeof(logging_env));
+  const bool logging_requested = logging_env[0] == '1';
+  const fmi3Boolean logging_on = logging_requested ? fmi3True : fmi3False;
   impl->instance = impl->instantiate(
     instance_name.c_str(),
     instantiation_token.c_str(),
     resource_dir.c_str(),
     fmi3False,
-    fmi3False,
+    logging_on,
     fmi3False,
     fmi3False,
     nullptr,

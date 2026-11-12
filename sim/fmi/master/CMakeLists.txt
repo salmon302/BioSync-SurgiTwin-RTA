@@ -39,6 +39,7 @@ set(SRTA_FMI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../include/fmi3")
 add_library(srtra_fmi_core STATIC
   src/scheduler.cpp
   src/fmu_participant.cpp
+  src/pipelined_exchange.cpp
 )
 target_include_directories(srtra_fmi_core
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -127,7 +128,7 @@ if(SRTA_FMI_MASTER_BUILD_TESTS)
   FetchContent_MakeAvailable(Catch2)
 
   enable_testing()
-  add_executable(srtra_fmi_master_tests tests/test_scheduler.cpp)
+  add_executable(srtra_fmi_master_tests tests/test_scheduler.cpp tests/test_pipelined_exchange.cpp)
   target_compile_features(srtra_fmi_master_tests PRIVATE cxx_std_17)
   target_link_libraries(srtra_fmi_master_tests PRIVATE srtra_fmi_core Catch2::Catch2WithMain)
   add_test(NAME srtra_fmi_master_tests COMMAND srtra_fmi_master_tests)

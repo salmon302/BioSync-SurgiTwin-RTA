@@ -32,7 +32,7 @@ _FR364_REQUESTS = [
     "RespirationRate",
     "OxygenSaturation",
     "MeanAirwayPressure",
-    "ArterialOxygenPartialPressure",
+    "ArterialOxygenPressure",
 ]
 
 

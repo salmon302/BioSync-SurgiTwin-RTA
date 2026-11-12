@@ -133,7 +133,7 @@ class SimulationMetrics:
     # PaO2 from the engine request "ArterialOxygenPressure" (REL_4_3_2). The earlier request name
     # "ArterialOxygenPartialPressure" returns NaN in this engine build (see the defect record).
     # None means unavailable (a non-finite engine value). A NaN is never stored here.
-    arterial_o2_partial_pressure_mmhg: Optional[float] = 0.0
+    arterial_o2_partial_pressure_mmhg: Optional[float] = None
 
 
 @dataclass

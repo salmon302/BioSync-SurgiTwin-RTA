@@ -84,7 +84,8 @@ std::unique_ptr<FmuParticipant> FmuParticipant::create(
   const std::string & dll_path,
   const std::string & instantiation_token,
   const std::string & instance_name,
-  std::string & error)
+  std::string & error,
+  const std::string & resource_dir)
 {
   auto impl = std::make_unique<Impl>();
   impl->module = LoadLibraryA(dll_path.c_str());
@@ -134,7 +135,7 @@ std::unique_ptr<FmuParticipant> FmuParticipant::create(
   impl->instance = impl->instantiate(
     instance_name.c_str(),
     instantiation_token.c_str(),
-    "",
+    resource_dir.c_str(),
     fmi3False,
     fmi3False,
     fmi3False,

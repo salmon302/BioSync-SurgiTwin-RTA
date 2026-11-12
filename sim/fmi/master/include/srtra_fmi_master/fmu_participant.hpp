@@ -17,11 +17,14 @@ class FmuParticipant final : public Participant
 public:
   // dll_path: binaries/x86_64-windows/<model>.dll inside the unzipped FMU. instantiation_token is the
   // instantiationToken of modelDescription.xml. Returns nullptr on failure and sets error.
+  // resource_dir: the unzipped FMU "resources" directory (FMI 3.0 resourcePath, with a trailing separator).
+  // An FMU that starts a worker from its resources (mechanical_sofa) needs it; others accept "".
   static std::unique_ptr<FmuParticipant> create(
     const std::string & dll_path,
     const std::string & instantiation_token,
     const std::string & instance_name,
-    std::string & error);
+    std::string & error,
+    const std::string & resource_dir = "");
 
   ~FmuParticipant() override;
   FmuParticipant(const FmuParticipant &) = delete;

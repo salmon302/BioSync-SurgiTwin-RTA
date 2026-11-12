@@ -25,6 +25,8 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MasterClock.msg"
   "msg/ParticipantState.msg"
+  "msg/StepRequest.msg"
+  "msg/StepReply.msg"
   DEPENDENCIES std_msgs
 )
 rosidl_get_typesupport_target(srtra_fmi_master_cpp_typesupport
@@ -61,6 +63,52 @@ ament_target_dependencies(fmi_master_node rclcpp std_msgs)
 target_link_libraries(fmi_master_node srtra_fmi_core "${srtra_fmi_master_cpp_typesupport}")
 
 install(TARGETS fmi_master_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Multi-rate master for the three-FMU roster (task 2.8 slice 2).
+add_executable(fmi_multirate_node src/multirate_node.cpp)
+target_include_directories(fmi_multirate_node PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_compile_features(fmi_multirate_node PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(fmi_multirate_node PRIVATE /W4 /permissive-)
+  target_link_libraries(fmi_multirate_node winmm)
+endif()
+ament_target_dependencies(fmi_multirate_node rclcpp std_msgs)
+target_link_libraries(fmi_multirate_node srtra_fmi_core "${srtra_fmi_master_cpp_typesupport}")
+
+install(TARGETS fmi_multirate_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Three-node G2.6 run (task 2.8 slice 2): node 1 master (thermal FMU), nodes 2 and 3 participants (mechanical, Pulse).
+add_executable(fmi_three_node_master src/three_node_master.cpp)
+target_include_directories(fmi_three_node_master PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_compile_features(fmi_three_node_master PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(fmi_three_node_master PRIVATE /W4 /permissive-)
+  target_link_libraries(fmi_three_node_master winmm)
+endif()
+ament_target_dependencies(fmi_three_node_master rclcpp std_msgs)
+target_link_libraries(fmi_three_node_master srtra_fmi_core "${srtra_fmi_master_cpp_typesupport}")
+
+add_executable(fmi_participant_node src/participant_node.cpp)
+target_include_directories(fmi_participant_node PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_compile_features(fmi_participant_node PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(fmi_participant_node PRIVATE /W4 /permissive-)
+  target_link_libraries(fmi_participant_node winmm)
+endif()
+ament_target_dependencies(fmi_participant_node rclcpp std_msgs)
+target_link_libraries(fmi_participant_node srtra_fmi_core "${srtra_fmi_master_cpp_typesupport}")
+
+install(TARGETS fmi_three_node_master fmi_participant_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

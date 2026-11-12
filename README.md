@@ -45,4 +45,15 @@ docker compose config -q
 
 ## Status
 
-The repository is at initial-development stage. Directories contain placeholders and smoke tests only. The RTA safety check uses stub thresholds, not clinical limits, and the compliance database has no schema yet.
+Last updated 2026-11-12. The authoritative status is `DEVELOPMENT_PLAN.md`.
+
+* Phase 2 (M&S tier) is in progress. Verification gates:
+  * G2.1 Mesh ingestion: PASS with recorded boundaries (single patient, HCC_001)
+  * G2.2 Solver rate: PASS with recorded boundaries (20 mm reference scene, placeholder material parameters)
+  * G2.3 Contact: PASS with recorded boundaries (Liver 1 parameter set only)
+  * G2.4 Wrench publish: PASS with recorded boundaries (synthetic trajectory source)
+  * G2.5 Pulse worker: PASS
+  * G2.6 Co-simulation: OPEN. The three-node run under the rebased VAL-033 clause is pending.
+* Phase 3 (RTA tier) is not started. `rta/` contains stub thresholds, not clinical limits.
+
+Contribution logs are in `SNDEV/docs/`, which is excluded from version control.

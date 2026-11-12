@@ -45,7 +45,7 @@ $nodeOut = Join-Path $LogDir "$tag-node.txt"
 $nodeErr = Join-Path $LogDir "$tag-node-stderr.txt"
 
 function Get-HostState([string]$label) {
-    $procs = Get-Process | Where-Object { $_.ProcessName -match '^(Warhammer|Roblox|runSofa|colcon|Slicer|ninja|cmake|pixi|python)' }
+    $procs = Get-Process | Where-Object { $_.ProcessName -match '^(runSofa|colcon|Slicer|ninja|cmake|pixi|python)' }
     $cpu = (Get-Counter '\Processor(_Total)\% Processor Time' -SampleInterval 5 -MaxSamples 1).CounterSamples[0].CookedValue
     $lines = @("label=$label utc=$((Get-Date).ToUniversalTime().ToString('o')) total_cpu_percent_5s=$([math]::Round($cpu,1)) logical_processors=$([Environment]::ProcessorCount)")
     foreach ($p in $procs) { $lines += "process=$($p.ProcessName) pid=$($p.Id) threads=$($p.Threads.Count) cpu_seconds_total=$([math]::Round($p.CPU,1))" }

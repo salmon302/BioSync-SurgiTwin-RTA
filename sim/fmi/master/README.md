@@ -95,7 +95,7 @@ The three-node run of gate G2.6 needs a clock that is not the master clock. The 
 
 ## Single-Node Measurement
 
-Run: 600 s at the 100 Hz planned rate, `timer_mode` high_resolution, 60000 ticks per topic, FMU stepped 6000 times, host state recorded before and after. Record `SNDEV/logs/fmi-master-measure-600s-high_resolution-2026-11-06T015357Z.json` (UTC time of the run, 2026-11-06 01:53 to 02:04 UTC), sidecar `...messages.json` (2.85 MB). The run is contended: Warhammer3 ran for the whole run at about one core (CPU time 22588.9 s before and 23174.3 s after). No Slicer process was seen at the two snapshots. The host was not sampled during the run, so a Slicer start inside the run window is not excluded.
+Run: 600 s at the 100 Hz planned rate, `timer_mode` high_resolution, 60000 ticks per topic, FMU stepped 6000 times, host state recorded before and after. Record `SNDEV/logs/fmi-master-measure-600s-high_resolution-2026-11-06T015357Z.json` (UTC time of the run, 2026-11-06 01:53 to 02:04 UTC), sidecar `...messages.json` (2.85 MB). The run is contended: other programs ran for the whole run at about one core (CPU time 22588.9 s before and 23174.3 s after). No Slicer process was seen at the two snapshots. The host was not sampled during the run, so a Slicer start inside the run window is not excluded.
 
 | Measure (ms) | Clock topic | State topic | Bound |
 |:---|---:|---:|---:|

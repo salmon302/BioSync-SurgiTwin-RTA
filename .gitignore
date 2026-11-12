@@ -31,5 +31,4 @@ cmake-build-*/
 .pixi/
 
 # Runtime captures (keep the placeholder)
-SNDEV/logs/*
-!SNDEV/logs/.gitkeep
+/SNDEV/

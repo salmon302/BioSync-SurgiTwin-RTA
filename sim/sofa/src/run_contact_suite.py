@@ -162,7 +162,7 @@ def base_config():
 
 def quiet_host_snapshot():
     script = (
-        "$p = Get-Process -Name Warhammer,Roblox,runSofa,colcon,Slicer -ErrorAction SilentlyContinue | "
+        "$p = Get-Process -Name runSofa,colcon,Slicer -ErrorAction SilentlyContinue | "
         "ForEach-Object { $_.Name }; "
         "$c = (Get-Counter '\\Processor(_Total)\\% Processor Time' -SampleInterval 1 -MaxSamples 3)"
         ".CounterSamples | ForEach-Object { [math]::Round($_.CookedValue,1) }; "

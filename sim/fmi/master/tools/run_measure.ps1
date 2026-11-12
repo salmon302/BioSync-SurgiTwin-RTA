@@ -45,8 +45,8 @@ $masterErr = Join-Path $LogDir "$tag-master-stderr.txt"
 
 # Host state (Get-Process and a 5 s CPU sample). The record shows the state before and after the run.
 function Get-HostState([string]$label) {
-    $names = 'Warhammer3', 'Roblox', 'runSofa', 'colcon', 'Slicer', 'ninja', 'cmake'
-    $procs = Get-Process | Where-Object { $names -contains $_.ProcessName -or $_.ProcessName -like 'Warhammer*' -or $_.ProcessName -like 'Slicer*' }
+    $names = 'runSofa', 'colcon', 'Slicer', 'ninja', 'cmake'
+    $procs = Get-Process | Where-Object { $names -contains $_.ProcessName -or $_.ProcessName -like 'Slicer*' }
     $cpu = (Get-Counter '\Processor(_Total)\% Processor Time' -SampleInterval 5 -MaxSamples 1).CounterSamples[0].CookedValue
     $lines = @("label=$label utc=$((Get-Date).ToUniversalTime().ToString('o')) total_cpu_percent_5s=$([math]::Round($cpu,1)) logical_processors=$([Environment]::ProcessorCount)")
     foreach ($p in $procs) {

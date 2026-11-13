@@ -1,0 +1,44 @@
+{
+  "scope": "DEVELOPMENT_PLAN.md task 3.8 slice 1: Catch2 unit suite and llvm-cov coverage pins for rta/ at the C++17 pin (gate G3.1, VAL-016).",
+  "pinnedOn": "2026-11-13",
+  "cppStandard": "c++17",
+  "tools": {
+    "catch2": {
+      "version": "3.9.1",
+      "url": "https://github.com/catchorg/Catch2/archive/refs/tags/v3.9.1.tar.gz",
+      "sha256": "a215c2a723bd7483efd236dc86066842a389cb4e344c61119c978acdf24d39be",
+      "license": "BSL-1.0",
+      "origin": "Fetched by CMake FetchContent from rta/CMakeLists.txt; the same pinned artifact is used by sim/fmi/master (record SNDEV/docs/impl-2026-11-05-task27-slice1-thermal-fmu.md and sim/SOUP.md).",
+      "offlineRebuild": "FetchContent verifies the SHA-256 on every fetch and caches the sources under <build>/_deps. A rebuild without network works against a populated build tree with -DFETCHCONTENT_FULLY_DISCONNECTED=ON, or with a vendored copy passed as -DFETCHCONTENT_SOURCE_DIR_CATCH2=<path>."
+    },
+    "llvmToolchain": {
+      "version": "19.1.5",
+      "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.5/clang+llvm-19.1.5-x86_64-pc-windows-msvc.tar.xz",
+      "sha256": "467d1a73ca938f47734af3baac2e78c5e730285469096ee088bb5c9590cabd70",
+      "binPath": "C:\\Users\\salmo\\tools\\llvm-19.1.5\\bin",
+      "components": "clang++, clang, llvm-profdata, llvm-cov (profdata mode and gcov mode)",
+      "origin": "Official LLVM 19.1.5 release binary, downloaded and extracted with tar to a user path (no elevation, not added to PATH). Same LLVM version as the clang-tidy pin in vv/static-analysis/pins.json."
+    }
+  },
+  "coverage": {
+    "evidenceLane": "host windows: clang++ 19.1.5 with -fprofile-instr-generate -fcoverage-mapping at CMAKE_CXX_STANDARD 17, CTest run under LLVM_PROFILE_FILE, llvm-profdata 19.1.5 merge, llvm-cov 19.1.5 report and export (rta/tests/coverage.ps1)",
+    "ciLaneNote": "The rta-tests job on ubuntu-24.04 builds rta/ and runs the same CTest suite with the image toolchain and produces no coverage evidence; the host lane owns the measured numbers.",
+    "instrumentation": "-fprofile-instr-generate -fcoverage-mapping (llvm-cov profdata mode)",
+    "thirdPartyExclusion": "llvm-cov -ignore-filename-regex 'catch2|_deps[\\/]|MSVC[\\/]14' keeps the report to rta/ sources",
+    "evaluatedAndDropped": "The gcov-format route (clang --coverage plus gcovr 8.8 over llvm-cov gcov) was evaluated on 2026-11-13 and dropped: for the Catch2-linked translation units the .gcno file table omits the primary .cpp path (observed with clang 19.1.5), so that report missed three rta/tests files. gcovr 8.8 stays installed on the host but is not part of the pinned check set.",
+    "mcdcCandidateNote": "llvm-cov 19.1.5 already exposes --show-branch-summary and --show-mcdc-summary on report; the MC/DC evaluation itself is the task 3.8 work item under deviation SA-004.",
+    "baselineReportDir": "SNDEV/logs/rta-coverage-baseline-2026-11-12"
+  },
+  "pythonCoverage": {
+    "pytest-cov": "7.1.0",
+    "pinnedIn": "middleware/requirements-test.txt (inherited by vv/tests/PQ/requirements.txt through -r)",
+    "resolvesCoverage": "7.17.3"
+  },
+  "mcdc": {
+    "status": "work item, not verified in this slice",
+    "candidate": "Clang 19 or newer llvm-cov MC/DC reporting (DEVELOPMENT_PLAN.md Section 5.2)",
+    "deviationId": "SA-004",
+    "register": "vv/traceability/deviation-register.md"
+  },
+  "defaultReportDir": "SNDEV/logs/rta-coverage-baseline-2026-11-12"
+}

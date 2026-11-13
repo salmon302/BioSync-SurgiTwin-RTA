@@ -1,6 +1,8 @@
 # Test and qualification dependencies (not installed in the runtime image).
 -r requirements.txt
 pytest==8.3.4
+# Python coverage gate (plan task 3.8 slice 1). pytest-cov 7.1.0 resolves coverage 7.17.3.
+pytest-cov==7.1.0
 # Starlette TestClient transport
 httpx==0.28.1
 # Lint (ruff) and type check (mypy) for sim/. Run by the sim-lint CI job; config is sim/pyproject.toml.

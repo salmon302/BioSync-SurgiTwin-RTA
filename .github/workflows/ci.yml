@@ -106,3 +106,14 @@ jobs:
         with:
           name: static-analysis-rta
           path: SNDEV/logs/static-analysis-baseline-2026-11-12/
+
+  # Task 3.8 slice 1: rta Catch2 and CTest suite on the CI lane. Coverage evidence is
+  # produced by the pinned host lane (rta/tests/coverage.ps1, clang 19.1.5 plus gcovr 8.8);
+  # this job runs the same suite with the image toolchain.
+  rta-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build-rta -DSRTA_BUILD_RTA_TESTS=ON
+      - run: cmake --build build-rta
+      - run: ctest --test-dir build-rta --output-on-failure
